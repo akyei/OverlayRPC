@@ -6,16 +6,20 @@ class Graph
 end
 
 class RoutingTable
-    @name 
-    @unvisited = Set.new
-    @visited = Set.new
-    @costHash = {}
-    @predecessor = {}
     
 
     def initialize()
+    	@name 
+    	@unvisited = Set.new
+    	@visited = Set.new
+    	@costHash = {}
+    	@predecessor = {}
     end
-
+	
+	def costHash
+		@costHash
+	end
+	
     def dijkstra(source)
         return 
     end
@@ -43,7 +47,9 @@ class Node
         @neighbors = {}
         @routingTable = RoutingTable.new
     end
-    
+    def routingTable
+		@routingTable
+	end
     def SendMsg(dest, msg)
         # First, determine if the message has somewhere to go - we need to look up
         # the routing table to see if a path exists to dest.
@@ -146,6 +152,7 @@ end
 end
     
 id = `hostname`
+id = id.chomp!
 neighbors = {}
 sequence = 0
 rt = RoutingTable.new()        
@@ -175,6 +182,28 @@ end
     
 thisNode = Node.new(id, sequence, neighbors, rt)
         
+def lsp_stuff
+
+	str = ""
+	
+	
+	neighbors.each { |key, value| 
+		thisNode.routingTable.costHash[key] = value;
+		str << "#{key}:#{value} "
+	}
+	
+	str = str.chop
+	puts(str)
+	
+	lsp_string = "LSP #{id} #{sequence} \"#{str}\""
+	puts("LSP-STRING: #{lsp_string}")
+	
+	ipArr[0].each { |key| 
+		key = key.chomp!
+		lsp_string2 = "LSP #{key} #{sequence} \"#{str}\""
+		puts("SENDING LSP --- #{lsp_string2}")
+	}
+
 
 
 
