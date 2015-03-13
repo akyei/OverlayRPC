@@ -1,10 +1,9 @@
 require 'set'
-require 'lsp'
 require 'socket'
-
+require 'ipaddr'
 class Graph
     Vertex = Struct.new(:name, :neighbors, :dist, :prev)
-
+end
 
 class RoutingTable
     @name 
@@ -18,7 +17,7 @@ class RoutingTable
     end
 
     def dijkstra(source)
-        return if 
+        return 
     end
     def findShortestPaths()
         while not (@visted.empty?)
@@ -32,10 +31,10 @@ class RoutingTable
         curr = predecessor["dest"]
         while (self.name != curr)
             prev = curr
-    end
+    	end
 
+   end
 end
-
 class Node
 
     def initialize(id, sequence, neighbors, routingTable)
@@ -101,7 +100,7 @@ class Node
             end       
             return ret  
     end
-    
+end  
     def ProcLSP(lsp_string)
 =begin
       1) Begin by taking note of the source of the LSP packet - this will become the the predecesor of all of src's neighbors
@@ -114,9 +113,9 @@ class Node
 =end
         
         if lsp_string =~ /LSP (\S+) (\d+) "(.*)"/ then
-            match $1 with src
-            match $2 with seq
-            match $3 with payload
+            src = $1# match $1 with src
+            seq = $2#match $2 with seq
+            payload = $3 #match $3 with payload
         end
         
         
@@ -134,61 +133,48 @@ class Node
     #Parsing each element id:cost into a new neighbors hash
     payloadArr.each do |value|
     if value =~ /(\s+):(\d+)/ then
-        match $1 with cur
-        match $2 with curCost
+        cur = $1 #match $1 with cur
+        curCost = $2 #match $2 with curCost
         nextCost = lowCost + curCost
         @routingTable.update(cur, nextCost)
     end
-    
+    end
     @neighbors.each do |cur|
         sendLSP(lsp_string)
-
-    
-        
-   
-        
-        
-        
-        
-        
-        
-=begin        
-        src
-        seq
-        payload
-        payloadArr = Array.new
-        neighbors = {}
-        
-        if lsp_string =~ /LSP (\s+) (\d+) (\d+) "((\s+:\d+)+)"/ then
-            match $1 with src
-            match $2 with seq
-            match $3 with payload
-        end
-        
-        # if the sequence number of the current Node is greater than the one coming in, end the function
-        if self.sequence["src"] > seq.to_i
-            return
-        end
-        
-        self.sequence["src"] = seq
-        
-        #Parsing the payload into an array of id:cost strings
-        payloadArr = payload.split(" ")
-        
-        #Parsing each element id:cost into a new neighbors hash
-        payloadArr.each do |value|
-            if value =~ /(\s+):(\d+)/ then
-                neighbors[$1] = $2
-            end
-        end
-        
-        
-        
-        
-        #Creating a new node object and adding it to the current node's unvisited set
-        newNode = new Node(src, {}, neighbors, [])
-        self.routingTable.unvisited.add(newNode);
-        
-    end
-=end
+	end
+	end
 end
+    
+id = `hostname`
+neighbors = {}
+sequence = 0
+rt = RoutingTable.new()        
+#ipArr = Socket.getifaddrs.map { |i| i.addr.ip_address if i.addr.ipv4? }.compact
+
+shittyText = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{print $1}' | grep -v 127.0.0.1`
+#puts("#{shittyText}")
+ipArr = shittyText.split('\n')
+#ipArr[0].chop!
+#ipArr = Socket::getaddrinfo(Socket.gethostname, "echo", Socket::AF_INET).map{ |x| x[3] }
+#ipArr = Socket::getaddrinfo(Socket.gethostname,"echo",Socket::AF_INET)[0][3]
+
+#puts("#{ipArr}")
+
+configFile = File.open(ARGV[0], 'r')
+
+while (line = configFile.gets())
+    #puts("#{line}") 
+    arr = line.split(',')
+	#puts("IP ADD 1 #{ipArr[0]} IP ADD 2 #{ipArr[1]} QUESTION IP #{arr[0]}")
+	if ( ipArr[0].include?("#{arr[0]}")) then #[0])) then
+        puts("I have a neighbor, #{arr[1]} with cost #{arr[2]}")
+   	neighbors["#{arr[0]}"] = arr[2].to_i  
+	else 
+	end
+end  
+    
+thisNode = Node.new(id, sequence, neighbors, rt)
+        
+
+
+
