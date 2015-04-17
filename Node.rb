@@ -182,7 +182,7 @@ end
     
 thisNode = Node.new(id, sequence, neighbors, rt)
         
-def lsp_stuff
+#def lsp_stuff
 
 	str = ""
 	
@@ -203,6 +203,7 @@ def lsp_stuff
 		lsp_string2 = "LSP #{key} #{sequence} \"#{str}\""
 		puts("SENDING LSP --- #{lsp_string2}")
 	}
+
 
 
 
