@@ -93,6 +93,6 @@ class RoutingTable
 			curr = predecessor[curr]
 		end
 #			puts("found next hop #{prev}")
-		return prev
+		return curr
 	end
 end 
