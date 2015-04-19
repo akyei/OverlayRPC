@@ -5,7 +5,7 @@ include Socket::Constants
 class Node
 	def initialize(id, sequence, neighbors, routingTable)
 		@id = id
-		@seqeuence = sequence
+		@sequence = sequence
 		@neighbors = neighbors
 		@routingTable = routingTable#RoutingTable.new(id)
 	end
@@ -14,6 +14,12 @@ class Node
 		@routingTable
 	end
 
+	def sequence(src)
+		@sequence[src]
+	end
+	def setseq(src, info)
+		@sequence[src] = info
+	end
 	def neighbors
 		@neighbors
 	end
@@ -28,9 +34,10 @@ class Node
 	end
 
 	def procPacket(pack_string)
+#		puts("please suck me pregunta")
 		case pack_string
 			when /LSP (.*)/
-				#puts("Processing an LSP")
+#				puts("Processing an LSP")
 				ProcLSP(pack_string)
 			when /SENDMSG (.*)/
 				procSENDMSG(pack_string)
@@ -42,62 +49,106 @@ class Node
 	def LSPLowestCost(string)
 		mysplit = string.split(" ")
 		small = 5000
-		ret = nil
-		puts("sanitybaby")
+		#puts("sanitybaby")
+		rets = ""
 		mysplit.each do |value|
 			if value =~ /(\S+):(\d+)/ then
 			#	puts("DOLLAR SIGN: "+$1)
-				if (self.routingTable.getCost($1) == 0)
+			#	if (self.routingTable.getCost($1) == 0)
 			#	puts(self.routingTable.getCost($1))
-				
-				elsif self.routingTable.getCost($1) != -1
-				puts("sanityadult")
+			#	
+				#elsif self.routingTable.getCost($1) != -1
+				if self.routingTable.getCost($1) != -1
+			#	puts("SMALL #{small} Candidate:#{$2.to_i}")
 					if small > $2.to_i
 						small = $2.to_i
-						ret = value
+						rets = value.dup
 					end
 				end
 			end
-		
+	
 			
 		end
-		return ret
+#		puts("ending: #{rets}")
+		return rets
 	end
 
 	def ProcLSP(lsp_string)
-		puts("sanity")	
 		if lsp_string =~ /LSP (\S+) (\d+) "(.*)"/ then
 			src = $1
 			seq = $2
 			payload = $3
 		end
-		puts(payload)
+=begin
+		if self.sequence(src) == nil
+			puts("not gonna ignore this")	
+			setseq(src, seq.to_i)#sequence(src) = seq.to_i
+		end
+		if sequence(src) > seq.to_i
+			return
+			puts("IGNORING")
+		end
+=end
+	#	puts(payload)
 		lowestKnown = self.LSPLowestCost(payload)
-		puts("LOWESTKNOWN: #{lowestKnown}")
+	#	puts("LOWESTKNOWN: #{lowestKnown}")
 		lowestParse = lowestKnown.split(":")
 	#	puts("its cool im sane")
-		puts("LOWEST PARSE: #{lowestParse[1]} #{lowestParse[0]}")
-		lowcost = lowestParse[1].to_i + self.routingTable.getCost(lowestParse[0].chomp)
-		puts("sanity 3")
+		#puts("LOWEST PARSE: #{lowestParse[1]} #{lowestParse[0]}")
+		#puts(lowestParse[1])
+		lowcost = lowestParse[1].to_i + self.routingTable.getCost(lowestParse[0])
+#		puts("LOWCOST: #{lowcost} ")
 		self.routingTable.update(src, lowcost)
-			
-		payloadArr = payload.split(" ")
+		self.routingTable.setPred(src, lowestParse[0])	
+		payloadArr = payload.split
 		payloadArr.each do |value|
-			if value =~ /(\s+):(\d+)/ then
+		#puts("NACHOOOOO?")
+			if value =~ /(\S+):(\d+)/ then
 				cur = $1
 				curcost = $2
-				nextCost = lowcost + curcost
-				self.routingTable.update(cur, nextCost)
+				nextCost = lowcost + curcost.to_i
+				if cur != lowestParse[0]
+		#		puts("#{cur} #{nextCost}")
+					self.routingTable.update(cur, nextCost)
+					self.routingTable.setPred(cur, src)
+				end
 			end
 
 		end
-
-		self.neighbors.each do |key|
-			sendLSP(key, lsp_string)
-		end
+		
+		self.neighbors.each { |key, value|
+#			puts("#{key} +++++++++++++  #{src}")
+			sendLSP(key, lsp_string, src)
+		}
 	end
 
-	def sendLSP(key, str)
+	def packetize(str, maxlen)
+		arr = []
+		n = ((str.length.to_f / maxlen)).ceil
+		0.step(n-1,1) { |i|
+			arr[i] = str[i*maxlen,i+1*maxlen]
+		}
+		return arr
+	end
+
+	def sendLSP(key, str, src)
+		if key == src
+		#	puts("I'm not sending on this link!!!\nKEY: #{key} SRC: #{src}")
+			return
+		end	
+#			puts("I'm sending on this link!!!KEY: #{key} SRC: #{src}")
+			realmsg = packetize(str, 50) 
+			socket = Socket.new(AF_INET, SOCK_STREAM, 0)
+			sockaddr = Socket.sockaddr_in(6666, "#{key}")
+			socket.connect(sockaddr)
+			realMsg.each { |x|
+				#puts("writing #{x}")
+				#puts("writing #{x} to #{key}") 
+				#puts("writing to #{realkey}")
+				socket.write(x)
+				#puts("wrote #{x}")
+			}
+			socket.close
 		puts("At least i got this far")
 	end
 end 
@@ -111,27 +162,23 @@ MAXLEN = 90
 
 lead = `hostname`
 lead = lead.chomp!
-neighbors = {}
+$neighbors = {}
 $sequence = 0
-$rt = RoutingTable.new(lead)
-
+$interfaces = []
+$rt = RoutingTable.new(lead, $interfaces)
 shittyText = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{print $1}' | grep -v 127.0.0.1` 
 
 ipArr = shittyText.split('\n')
 def poop()
 	lead = `hostname`
 	shittyText = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{print $1}' | grep -v 127.0.0.1` 
-	neighbors = {}
+#	$neighbors = {}
 #	sequence = 0
 #	rt = RoutingTable.new("#{lead}")
 	ipArr = shittyText.split('\n')
 	ipArr[0].each { |x| 
-		#puts("THIS IS MY COST #{x}")
 		$rt.update(x.chomp!, 0)
-		#$rt.costHash[x] = 50
-		#puts($rt.getCost(x))
-		#puts($rt.getCost("10.0.0.21"))
-		#puts($rt.getCost("10.0.0.20"))
+		$rt.setPred(x, x)
 	}	
 	configFile = File.open(ARGV[0], 'r')
 	
@@ -139,17 +186,15 @@ def poop()
 		arr = line.split(",")
 		if (ipArr[0].include?("#{arr[0]}")) then
 			#puts("I have a neighbors, #{arr[1]} with cost #{arr[2]}")
-			#neighbors["#{arr[0]}"] = arr[2].to_i
-			neighbors["#{arr[1]}"] = arr[2].to_i
+			$neighbors["#{arr[1]}"] = arr[2].to_i
 			$rt.update(arr[1], arr[2].to_i)
-			#puts ("COST METRIC" + $rt.getCost(arr[1]).to_s)
 			$rt.setPred(arr[1], arr[0])
 		else
 		end
 	end
 	configFile.close
 	$sequence += 1
-	myNode = Node.new(lead, $sequence, neighbors, $rt)
+	myNode = Node.new(lead, $sequence, $neighbors, $rt)
 end
 
 def packetize(str, maxlen)
@@ -169,15 +214,8 @@ end
 	Main Process will act as a server and send messages as needed
 =end
 server = TCPServer.new('0.0.0.0', 6666)
-#puts("HELLLOOOOOOOOOOOOOO #{ipArr[0]}")
-#server = Socket.new(AF_INET, SOCK_STREAM, 0)
-#sockaddr = Socket.sockaddr_in(6666, "localhost")
-#server.bind(sockaddr)
-#server.listen(6)
-#puts(server) 
-#while clisock = server.accept
-#	server.listen
 myNode = poop()
+=begin
 fork do
 	while true
 		sleep(5)
@@ -190,6 +228,7 @@ fork do
 			#myNode.routingTable.costHash[key] = value;
 			str << "#{key}:#{value} "
 		}
+		myNode.routingTable.setInterfaces(ipArr[0])
 		str = str.chop
 		#lsp_string = "LSP #{id} #{sequence} \"#{str}\""
 		ipArr[0].each { |key|
@@ -198,9 +237,9 @@ fork do
 			puts(lsp_string2)
 			#puts(lsp_string2)
 			realMsg = packetize(lsp_string2, MAXLEN)
-			realMsg.each { |y|
+	#		realMsg.each { |y|
 				#puts "RealMSG content " + y
-			}
+	#		}
 			#puts("---------------------");
 			#puts (realMsg)
 			myNode.neighbors.each { |key, value| 
@@ -231,16 +270,76 @@ fork do
 		}
 			#sequence = sequence + 1
 			sleep(INTERVAL)
+			myNode.routingTable.dump
 			myNode = poop()
 	end
 end
+=end
 while true
+threadA = Thread.fork do
+#	while true
+		sleep(5)
+	#	myNode = poop()
+		str = ""
+		ipArr[0].each { |w| 
+			str << "#{w.chomp!}:0 "
+		}
+		myNode.neighbors.each{ |key, value|
+			#myNode.routingTable.costHash[key] = value;
+			str << "#{key}:#{value} "
+		}
+		$interfaces = myNode.routingTable.setInterfaces(ipArr[0])
+		str = str.chop
+		#lsp_string = "LSP #{id} #{sequence} \"#{str}\""
+		ipArr[0].each { |key|
+			key = key.chomp!
+			lsp_string2 = "LSP #{key} #{$sequence} \"#{str}\"\\n"
+			#puts(lsp_string2)
+			realMsg = packetize(lsp_string2, MAXLEN)
+	#		realMsg.each { |y|
+				#puts "RealMSG content " + y
+	#		}
+			#puts("---------------------");
+			#puts (realMsg)
+			myNode.neighbors.each { |key, value| 
+				socket = Socket.new(AF_INET, SOCK_STREAM, 0)
+				#realkey = key.dup
+				#realkey = realkey.chomp!
+				#puts(key)
+				#puts("REALKEY = #{key}")
+				sockaddr = Socket.sockaddr_in(6666, "#{key}")
+				#puts("establishing connection")
+				socket.connect(sockaddr)
+				#puts("CONNECTION ESTABLISHED")
+				realMsg.each { |x|
+					#puts("writing #{x}")
+					#puts("writing #{x} to #{key}") 
+					#puts("writing to #{realkey}")
+					socket.write(x)
+					#puts("wrote #{x}")
+				}
+			#	socket.close
+			#	puts("closing socket")
+			#	while ((text = socket.recv(MAXLEN)) != "OK")
+			#		puts(text)
+			#	end
+				
+				socket.close
+			}	
+		}
+			#sequence = sequence + 1
+#			sleep(INTERVAL)
+			myNode.routingTable.dump
+			myNode = poop()
+	end
+
+threadA.join
 #clisock = server.accept
 #until server.closed?
 	Thread.new(clisock = server.accept) { |client|
 		msg = ""
-		remote_ip = client.peeraddr
-
+		fam, port, *addr = client.getpeername.unpack('nnC4')#getpeername.unpack('nnC4')#peeraddr
+		remote_ip = addr.join('.')
 
 		#while ( (data = clisock.recvfrom(MAXLEN)[0].chomp)[-1] != "\n")
 		#while (msg[-1] != "\v")
@@ -263,11 +362,12 @@ while true
 		client.close
 #		puts("----------------------")
 		#puts (msg)
-#		puts("RECEIVED MSG from #{remote_ip} #{data}")	
+		puts("RECEIVED MSG from #{remote_ip} #{data}")	
 		myNode.procPacket(data)
 	}
 
 end
+
 
 
 		
