@@ -74,8 +74,8 @@ class RoutingTable
 		@name
 	end
 
-	def dump
-		file = File.open("/tmp/#{@name}.dump", 'a+')
+	def dump(filename)
+		file = File.open(filename, 'a+')#/tmp/#{@name}.dump", 'a+')
 		ret_ip = "#"
 		ret_name = "?"
 		@association.each { |key, value|
@@ -97,9 +97,9 @@ class RoutingTable
 		file.puts(str)
 		}
 		file.puts("/////////////////////////")
-#		file.close
+		file.close
 	
-#begin
+=begin
 		@costHash.each { |key, value|
 			nexthop = nextHop(key)
 			str = "#{@name},#{key},#{value},#{nexthop}"
@@ -107,7 +107,7 @@ class RoutingTable
 		}
 		file.puts("++++++++++++++++++++++++++++")
 		file.close
-#end			
+=end			
 	end
 
 	def costHash
@@ -165,17 +165,17 @@ class RoutingTable
 			curr = predecessor[curr]
 		end
 		retr = ""	
-			puts("CURRRRRRRR #{curr}")			
+#			puts("CURRRRRRRR #{curr}")			
 			destip = deassociate(dest)
 			nexthopip = deassociate(curr)
 			yes = association[nexthopip]
-			puts("+++++++++++++1")
+#			puts("+++++++++++++1")
 			puts(yes.flatten.to_a)
-			puts("////////////")
+#			puts("////////////")
 			puts(neighbors.to_a)
 			if (yes != nil)
 				final_hop = yes.flatten.intersection(neighbors.flatten)
-				puts("2")
+#				puts("2")
 				if (final_hop.empty?)
 					retr = curr
 				else
@@ -187,8 +187,8 @@ class RoutingTable
 			else
 				retr = curr
 			end
-			puts("3")
-			puts("found next hop to desitnation #{destip}:#{dest} -> #{nexthopip}:#{retr}")
+#			puts("3")
+#			puts("found next hop to desitnation #{destip}:#{dest} -> #{nexthopip}:#{retr}")
 		return retr
 	end
 end 

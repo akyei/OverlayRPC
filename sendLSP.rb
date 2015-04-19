@@ -23,9 +23,9 @@ end
 
 while true
 	if $sequence == 0 
-		sleep(15)
+		sleep(ARGV[1].to_i / 3)
 	else
-		sleep(15)
+		sleep(ARGV[1].to_i)
 	end
 	configFile = File.open(ARGV[0], 'r')
 	while (line = configFile.gets())

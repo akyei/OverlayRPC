@@ -145,7 +145,7 @@ class Node
 			return
 			
 		end	
-			realmsg = packetize(str, 50) 
+			realmsg = packetize(str, MAXLEN) 
 			socket = Socket.new(AF_INET, SOCK_STREAM, 0)
 			sockaddr = Socket.sockaddr_in(6666, "#{key}")
 			socket.connect(sockaddr)
@@ -158,10 +158,10 @@ end
 
 
 #main
-system("ruby /home/core/OverlayRPC/sendLSP.rb /tmp/t3.txt &")
-weightfile = "/tmp/t1.txt"
-INTERVAL = 10
-MAXLEN = 90
+system("ruby /home/core/OverlayRPC/sendLSP.rb #{ARGV[0]} #{ARGV[3]} &")
+INTERVAL = ARGV[3].to_i
+MAXLEN = ARGV[2].to_i
+DUMPINT = ARGV[4].to_i
 $mutex = Mutex.new
 lead = `hostname`
 lead = lead.chomp!
@@ -238,8 +238,8 @@ $myNode.routingTable.setInterfaces(ipArr[0])
 poop()
 threadDump = Thread.new do
 	while true	
-	sleep(30)
-	$myNode.routingTable.dump
+	sleep(DUMPINT)
+	$myNode.routingTable.dump(ARGV[1])
 	end
 end
 while true
