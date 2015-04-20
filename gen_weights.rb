@@ -2,7 +2,7 @@
 
 fHandle_ns = File.open(ARGV[0], 'r')
 interval = ARGV[2].to_i
-
+seq_num = 0
 
 ns = {}
 
@@ -25,14 +25,15 @@ while(true)
       ns[s].keys.each{ |d|
         v = rand(10) + 1
         
-        fHandle_ws.puts "#{d},#{s},#{v}"
-        fHandle_ws.puts "#{s},#{d},#{v}"
+        fHandle_ws.puts "#{d},#{s},#{v},#{seq_num}"
+        fHandle_ws.puts "#{s},#{d},#{v},#{seq_num}"
       }
     }
     fHandle_ws.close()
   rescue
     #no op
   end
+  seq_num = seq_num+1
   sleep(interval)
 end
 
