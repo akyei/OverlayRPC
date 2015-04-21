@@ -99,6 +99,8 @@ def addEdge(edge)
 		if not @vertices[v2].neighbors.include?(v1)
 			@vertices[v2].neighbors << v1
 		end
+		@vertices[v2].dist = dist
+		@vertices[v1].dist= dist
 		@edges[[v1,v2]] = @edges[[v2, v1]] = dist[0]
 	end
 end
@@ -158,6 +160,16 @@ end
 #puts($interfaces)
 
 #$graph = Graph.new
+def associate(node, src)
+	#puts("#{node} #{src}")
+	if $associations[node] == nil
+		$associations[node] = Set.new
+		$associations[node].add(src)
+	else
+		$associations[node].add(src)
+		$associations[node].flatten!
+	end
+end
 initEdges = []
 $interfaces.each do |key|
 	$interfaces.each do |key2|
@@ -170,6 +182,7 @@ if $interfaces.length() == 1
 			#puts("Key 1 #{key} Key 2: #{key2}")
 			initEdges << [:"#{key.chomp}".to_sym, :"#{key2.chomp}".to_sym, [0,0]]
 			#$graph.addEdge([:"#{key}", :"#{key2}", [0,0]])
+			associate($hostname, key2)
 		end
 	end
 end
@@ -179,7 +192,8 @@ configFile = File.open($weightfile, 'r')
 while line=configFile.gets()
 	arr = line.split(",")
 	if $interfaces.include?("#{arr[0]}")
-		$neighbors["#{arr[0]}"] = arr[2].to_i
+		puts("I have a neighbor #{arr[1]} with cost #{arr[2]}")
+		$neighbors["#{arr[1]}"] = arr[2].to_i
 	else
 	end
 end
@@ -214,23 +228,16 @@ def packetize(str)
 	}
 	return arr
 end
-def associate(node, src)
-	#puts("#{node} #{src}")
-	if $associations[node] == nil
-		$associations[node] = Set.new
-		$associations[node].add(src)
-	else
-		$associations[node].add(src)
-		$associations[node].flatten!
+def sendLSP(lsp_string, source, node)
+	if (node == $hostname)
+		return
 	end
-end
-def sendLSP(lsp_string, source)
-	puts("here")
-	$neighbors.each do |key|
+	$neighbors.each do |key, value|
 		if key == source
 			next
 		end
-		realmsg = packetize(str, MAXLEN)
+		#puts("sending to #{key}")
+		realmsg = packetize(lsp_string)
 		socket = Socket.new(AF_INET, SOCK_STREAM, 0)
 		sockaddr = Socket.sockaddr_in(6666, "#{key}")
 		socket.connect(sockaddr)
@@ -249,35 +256,43 @@ def procLSP(lsp_string, source)
 		seq = $3
 		payload = $4
 	end
-	if (node == $hostname)
+#	if (node == $hostname)
 		#The LSP was from this node, don't send again
-		return nil
-	elsif $sequence[node] == nil
+#		return nil
+	if $sequence[src] == nil
 		puts("encountering first sequence number")#No associated sequence number from this link
-		$sequence[node] = seq.to_i
-	elsif $sequence[node] >= seq.to_i
+		$sequence[src] = seq.to_i
+	elsif $sequence[src] >= seq.to_i
 		#Already received a more recent LSP from this link
 		return 
 	end
-	puts("found a new sequence number #{$seqeunce}")
-	$sequence[node] = seq.to_i
+#	puts("found a new sequence number #{$seqeunce}")
+	$sequence[src] = seq.to_i
 	associate(node, src)
 	syms = []
 #	puts("Syms class: #{syms.class}")
 	info = payload.split(" ")
 	info.each do |link|
-		puts("adding edge to graph")
 		parse = link.split(":")
 		if src == parse[0]
+		elsif not parse[0] =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
+			next
 		else
-		syms << [:"#{src}".to_sym, :"#{parse[0]}".to_sym, [parse[1].to_i, seq.to_i]]
+#			if $interfaces.include?(parse[0])
+#				if $neighbors.has_key?(src)
+#					syms << [:"#{src}".to_sym, :"#{parse[0]}".to_sym, [parse[1].to_i, seq.to_i]]
+#					puts("Adding Edge because #{src} is a neighbor")
+#				end
+#			else 
+					syms << [:"#{src}".to_sym, :"#{parse[0]}".to_sym, [parse[1].to_i, seq.to_i]]
+#			end
 		end
 	#	puts("Syms class: #{syms.class}")
 	#	puts("SYMS: #{syms[0]} #{syms[1]} #{syms[2]}")
 	end
 	$graph.addEdge(syms)
-	puts("about to send lsp to neighbors")
-	sendLSP(lsp_string, source)
+	#puts("about to send lsp to neighbors")
+	sendLSP(lsp_string, source, node)
 	return true
 end
 end
@@ -311,11 +326,11 @@ $mutex.synchronize do
 		end
 =end		
 		#print("KEY!!!!: #{key}")	
-	if path.length != 1
-			path.shift
-		end
-		destHost = deassociate(key)
-		file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{path[0]},#{$graph.vertices[key].dist[1]}")
+#	if path.length != 1
+#			path.shift
+#		end
+		destHost = deassociate(key.to_s)
+		file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{path.join('->')},#{$graph.vertices[key].dist[1]}")
 	}
 	#file.puts($graph)
 	file.puts("++++++++++++++++++++++++++++++++++++++++++++++++")
@@ -359,7 +374,7 @@ loop {
 		data = client.gets("\\n")
 		client.close
 #		if procPacket(data, remote_ip)
-			puts("RECEIVED MSG from #{remote_ip} #{data}")
+		#	puts("RECEIVED MSG from #{remote_ip} #{data}")
 #		end
 		procPacket(data, remote_ip)
 	end

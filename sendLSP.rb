@@ -67,12 +67,17 @@ file = options[:file]
 sleep(initial_sleep)
 while true 
 	str =""
+	neighbors = {}
 	configFile = File.open(file, 'r')
 	while (line = configFile.gets())
 		arr = line.split(",")
 		if (interfaces.include?("#{arr[0]}"))
+			if arr[1] =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
 			neighbors["#{arr[1]}"] = arr[2].to_i
 			sequence["#{arr[1]}"] = arr[3].to_i
+			else 
+				puts("read an invalid neighbor #{arr[1]}")
+			end
 		else
 		end
 	end
@@ -81,12 +86,14 @@ while true
 		str << "#{key.chomp}:0 "
 	}
 	neighbors.each { |key, value|
+		puts("IP ADDRESS: #{key}")
+		puts("COST: #{value}")
 		str << "#{key}:#{value} "
 	}
-
+	puts(str)
 	str = str.chop
 	interfaces.each { |key1|
-		key = key1.chomp!
+		key1.chomp!
 		#puts(key1)
 		#puts(str)
 		neighbors.each { |key2, value|
