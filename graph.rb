@@ -4,46 +4,53 @@ require 'thread'
 require 'socket'
 require 'ipaddr'
 require 'optparse'
-include Sockets::Constants
+require 'set'
+include Socket::Constants
 
 options = {:weightfile => nil, :routefile => nil, :dumpinterval => nil, :routeinterval => nil, :length => nil}
 
 parser = OptionParser.new do |opts|
-	opts.banner = "Usage: graph.rb -w [filename] -r [filename] -d [dump interval] -rt [Protocol Interval] -ml [Max packet length]"
-	opts.on('-w' '--weightfile weightfile', 'Weight Input File') do |weight|
+	opts.banner = "Usage: graph.rb -w [filename] -r [filename] -d [dump interval] -f [Protocol Interval] -m  [Max packet length]"
+	opts.on('-w', '--weightfile weightfile', 'Weight Input File') do |weight|
 		options[:weightfile] = weight
 	end
-	opts.on('-r' '--routefile routefile', 'Route Output File') do |route|
+	opts.on('-r', '--routefile routefile', 'Route Output File') do |route|
 		options[:routefile] = route
 	end
-	opts.on('-d' '--dump interval(seconds)', Fixnum, 'How often the routing information is sent to a text file') do |delay|
-		options[:dumpinterval] = delay
+	opts.on('-d', '--dump interval(seconds)', 'How often the routing information is sent to a text file') do |delay|
+		options[:dumpinterval] = delay.to_i
 	end
-	opts.on('-rt' '--route-time time(seconds)', Fixnum, 'How often the routing protocol is run') do |rtime|
-		options[:routeinterval] = rtime
+	opts.on('-f', '--foutetime time(seconds)', 'How often the routing protocol is run') do |rime|
+		options[:routeinterval] = rime.to_i
 	end
-	opts.on('-ml' '--maxlength length(bytes)', Fixnum, 'Maximum Packet Length in bytes') do |length|
-		options[:maxlength] = length
+	opts.on('-m', '--maxlength length(bytes)', 'Maximum Packet Length in bytes') do |length|
+		puts("here")
+		options[:maxlength] = length.to_i
 	end
-	opts.on('-h' '--help', 'Display Help') do 
+	opts.on('-h', '--help', 'Display Help') do 
 		puts opts
 		exit
 	end
 end
 parser.parse!
+puts options[:routeinterval]
 if options[:weightfile] == nil
 	puts("Specify a weightfile with -w")
 	exit
-elsif options[:routefile] == nil
-	puts("Specify a file to dump routing tables with -r")
+end
+if options[:routefile] == nil
+	puts("Specify a file to dump routing tables with -rt")
 	exit
-elsif options[:dumpinterval] == nil
+end
+if options[:dumpinterval] == nil
 	puts("Routing Table dump interval not specified, defaulting to 15 seconds")
 	options[:dumpinterval] = 15
-elsif options[:routeinterval] == nil
+end
+if options[:routeinterval] == nil
 	puts("Route Calculation interval not specified, defaulting to 10 seconds")
 	options[:routeinterval] = 10
-elsif options[:maxlength] == nil
+end
+if options[:maxlength] == nil
 	puts("Maximum Packet Length not specified, defaulting to 20 bytes")
 	options[:maxlength] = 20
 end
@@ -52,14 +59,15 @@ $hostname = `hostname`
 $associations = {}
 $hostname = $hostname.chomp!
 ip_addresses = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{print $1}' | grep -v 127.0.0.1`
-$interfaces = ip_addresses.split('\n')[0]
+$interfaces = ip_addresses.split('\n')
 $mutex = Mutex.new
 $sequence = {}
 $maxlen = options[:maxlength]
 $routeinterval = options[:routeinterval]
-$dumpinterval = options[:routeinterval]
+$dumpinterval = options[:dumpinterval]
 $weightfile = options[:weightfile]
 $routefile = options[:routefile]
+$routefile << "#{$hostname}.dump"
 class Graph
 
 Vertex = Struct.new(:name, :neighbors, :dist, :prev)
@@ -137,15 +145,22 @@ end
 =end
 #puts($interfaces)
 
-$graph = Graph.new
+#$graph = Graph.new
+initEdges = []
 $interfaces.each do |key|
 	$interfaces.each do |key2|
+		if $interfaces.length() == 1
+			initEdges << [:"#{key.chomp}", :"#{key2.chomp}", [0,0]]
+		end
 		if key2 != key
-			$graph.addEdge([:"#{key}", :"#{key2}", [0,0]])
+			initEdges << [:"#{key.chomp}", :"#{key2.chomp}", [0,0]]
+			#$graph.addEdge([:"#{key}", :"#{key2}", [0,0]])
 		end
 	end
 end
-$graph.dijkstra(:"#{$interfaces[0]}")
+#puts(initEdges)
+$graph = Graph.new(initEdges)
+$graph.dijkstra(:"#{$interfaces[0].chomp!}")
 =begin
 g = Graph.new([	[:a, :b, [7,2]],
 		[:a, :c, [9,3]],
@@ -176,6 +191,7 @@ def packetize(str)
 	return arr
 end
 def associate(node, src)
+	#puts("#{node} #{src}")
 	if $associations[node] == nil
 		$associations[node] = Set.new
 		$associations[node].add(src)
@@ -219,10 +235,13 @@ def procLSP(lsp_string, source)
 	$sequence[src] = seq.to_i
 	associate(node, src)
 	syms = []
+#	puts("Syms class: #{syms.class}")
 	info = payload.split(" ")
 	info.each do |link|
 		parse = link.split(":")
 		syms << [:"#{src}", :"#{parse[0]}", [parse[1].to_i, seq.to_i]]
+	#	puts("Syms class: #{syms.class}")
+	#	puts("SYMS: #{syms[0]} #{syms[1]} #{syms[2]}")
 	end
 	$graph.addEdge(syms)
 	sendLSP(lsp_string, source)
@@ -245,16 +264,17 @@ $mutex.synchronize do
 	file = File.open(filename, 'a+')
 	ret_ip = "#"
 	ret_name = "?"
-	source = $interfaces[0]
+	source = $interfaces
 	start = :"#{source}"
 	$graph.dijkstra(start)
 	$graph.vertices.each { |key, value|
 		path, dist = $graph.shortest_path(start, key)
-		if not $interfaces.include(key)
+=begin		if not $interfaces.include(key)
 			while $interfaces.include?(path[0])
 				path.shift
 			end
 		end
+=end
 		file.puts("#{$hostname},#{key},#{dist},#{path[0]},#{$graph.vertices[key].dist[1]}")
 	}
 	file.puts("++++++++++++++++++++++++++++++++++++++++++++++++")
@@ -275,6 +295,9 @@ threadB = Thread.new do
 	loop { 
 		sleep($dumpinterval)
 		dump($routefile)
+	#	$mutex.synchronize do
+	#		puts($graph)
+	#	end
 	}
 end
 #=begin
@@ -286,9 +309,10 @@ loop {
 		remote_ip = addr.join('.')
 		data = client.gets("\\n")
 		client.close
-		if procPacket(data, remote_ip)
+#		if procPacket(data, remote_ip)
 			puts("RECEIVED MSG from #{remote_ip} #{data}")
-		end
+#		end
+		procPacket(data, remote_ip)
 	end
 }
-#=end		
+
