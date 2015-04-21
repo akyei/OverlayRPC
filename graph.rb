@@ -20,10 +20,10 @@ parser = OptionParser.new do |opts|
 	opts.on('-d', '--dump interval(seconds)', 'How often the routing information is sent to a text file') do |delay|
 		options[:dumpinterval] = delay.to_i
 	end
-	opts.on('-f', '--foutetime time(seconds)', 'How often the routing protocol is run') do |rime|
+	opts.on('-f', '--foutetime time(seconds)', Float, 'How often the routing protocol is run') do |rime|
 		options[:routeinterval] = rime.to_i
 	end
-	opts.on('-m', '--maxlength length(bytes)', 'Maximum Packet Length in bytes') do |length|
+	opts.on('-m', '--maxlength length(bytes)', Float, 'Maximum Packet Length in bytes') do |length|
 		puts("here")
 		options[:maxlength] = length.to_i
 	end
@@ -54,7 +54,7 @@ if options[:maxlength] == nil
 	puts("Maximum Packet Length not specified, defaulting to 20 bytes")
 	options[:maxlength] = 20
 end
-
+$neighbors = {}
 $hostname = `hostname`
 $associations = {}
 $hostname = $hostname.chomp
@@ -167,8 +167,7 @@ if $interfaces.length() == 1
 		end
 =end
 		if key2 != key
-			puts("STAY IN THE LIGHT")
-			puts("Key 1 #{key} Key 2: #{key2}")
+			#puts("Key 1 #{key} Key 2: #{key2}")
 			initEdges << [:"#{key.chomp}".to_sym, :"#{key2.chomp}".to_sym, [0,0]]
 			#$graph.addEdge([:"#{key}", :"#{key2}", [0,0]])
 		end
@@ -176,6 +175,15 @@ if $interfaces.length() == 1
 end
 #puts(initEdges)
 $graph = Graph.new(initEdges)
+configFile = File.open($weightfile, 'r')
+while line=configFile.gets()
+	arr = line.split(",")
+	if $interfaces.include?("#{arr[0]}")
+		$neighbors["#{arr[0]}"] = arr[2].to_i
+	else
+	end
+end
+configFile.close
 #$graph.dijkstra(:"#{$interfaces[0].chomp}")
 =begin
 g = Graph.new([	[:a, :b, [7,2]],
@@ -213,10 +221,11 @@ def associate(node, src)
 		$associations[node].add(src)
 	else
 		$associations[node].add(src)
-		$associations.flatten!
+		$associations[node].flatten!
 	end
 end
 def sendLSP(lsp_string, source)
+	puts("here")
 	$neighbors.each do |key|
 		if key == source
 			next
@@ -230,8 +239,10 @@ def sendLSP(lsp_string, source)
 		}
 		socket.close
 	end
+	puts()
 end
 def procLSP(lsp_string, source)
+	$mutex.synchronize do
 	if lsp_string =~ /LSP (\S+) (\S+) (\d+) "(.*)"/ then
 		src = $1
 		node = $2
@@ -241,22 +252,23 @@ def procLSP(lsp_string, source)
 	if (node == $hostname)
 		#The LSP was from this node, don't send again
 		return nil
-	elsif $sequence[src] == nil
-		#No associated sequence number from this link
-		$sequence[src] = seq.to_i
-	elsif $sequence[src] >= seq.to_i
+	elsif $sequence[node] == nil
+		puts("encountering first sequence number")#No associated sequence number from this link
+		$sequence[node] = seq.to_i
+	elsif $sequence[node] >= seq.to_i
 		#Already received a more recent LSP from this link
-		return nil
+		return 
 	end
-	$sequence[src] = seq.to_i
+	puts("found a new sequence number #{$seqeunce}")
+	$sequence[node] = seq.to_i
 	associate(node, src)
 	syms = []
 #	puts("Syms class: #{syms.class}")
 	info = payload.split(" ")
 	info.each do |link|
+		puts("adding edge to graph")
 		parse = link.split(":")
 		if src == parse[0]
-			puts("HOW YOU EAT THE PUSSSY")
 		else
 		syms << [:"#{src}".to_sym, :"#{parse[0]}".to_sym, [parse[1].to_i, seq.to_i]]
 		end
@@ -264,15 +276,15 @@ def procLSP(lsp_string, source)
 	#	puts("SYMS: #{syms[0]} #{syms[1]} #{syms[2]}")
 	end
 	$graph.addEdge(syms)
+	puts("about to send lsp to neighbors")
 	sendLSP(lsp_string, source)
-	true
+	return true
+end
 end
 def procPacket(pack_string, source)
 	case pack_string
 		when /LSP (.*)/
-			$mutex.synchronize do
 				procLSP(pack_string, source)
-			end
 		when /SENDMSG (.*)/
 			procSENDMSG(pack_string)
 		else
@@ -290,7 +302,7 @@ $mutex.synchronize do
 	$graph.dijkstra(source)
 	$graph.vertices.each { |key, value|
 		#path, dist = $graph.shortest_path(:"#{source}".to_sym, key.to_sym)
-	puts($graph)	
+	#puts($graph)	
 	path, dist = $graph.shortest_path(source, key)
 =begin		if not $interfaces.include(key)
 			while $interfaces.include?(path[0])
@@ -302,12 +314,21 @@ $mutex.synchronize do
 	if path.length != 1
 			path.shift
 		end
-		file.puts("#{$hostname},#{key},#{dist},#{path[0]},#{$graph.vertices[key].dist[1]}")
+		destHost = deassociate(key)
+		file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{path[0]},#{$graph.vertices[key].dist[1]}")
 	}
-	file.puts($graph)
+	#file.puts($graph)
 	file.puts("++++++++++++++++++++++++++++++++++++++++++++++++")
 	file.close
 end
+end
+def deassociate(ip)
+	$associations.each { |key, value|
+		terp = key
+		if value.include?(ip)
+			return terp
+		end
+	}
 end
 	
  
