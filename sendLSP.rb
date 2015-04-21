@@ -87,8 +87,8 @@ while true
 	str = str.chop
 	interfaces.each { |key1|
 		key = key1.chomp!
-		puts(key1)
-		puts(str)
+		#puts(key1)
+		#puts(str)
 		neighbors.each { |key2, value|
 			lsp_string = "LSP #{key1} #{hostname} #{sequence[key2]} \"#{str}\"\\n"
 			realmsg = packetize(lsp_string, maxlen)

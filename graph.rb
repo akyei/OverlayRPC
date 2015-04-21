@@ -59,7 +59,7 @@ $hostname = `hostname`
 $associations = {}
 $hostname = $hostname.chomp
 ip_addresses = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{print $1}' | grep -v 127.0.0.1`
-$interfaces = ip_addresses.split('\n')
+$interfaces = ip_addresses.split("\n")
 $mutex = Mutex.new
 $sequence = {}
 $maxlen = options[:maxlength]
@@ -76,8 +76,12 @@ def initialize(graph)
 	@vertices = Hash.new { |h,k| h[k] = Vertex.new(k, [], [0, 0])}
 	@edges = {}
 	graph.each do |(v1, v2, dist)|
-		@vertices[v1].neighbors << v2
-		@vertices[v2].neighbors << v1
+		if not @vertices[v1].neighbors.include?(v2)
+			@vertices[v1].neighbors << v2
+		end
+		if not @vertices[v2].neighbors.include?(v1)
+			@vertices[v2].neighbors << v1
+		end
 		@edges[[v1, v2]] = @edges[[v2, v1]] = dist[0]
 	end
 	@dijkstra_source = nil
@@ -89,8 +93,12 @@ end
 
 def addEdge(edge)
 	edge.each do |(v1, v2, dist)|
-		@vertices[v1].neighbors << v2
-		@vertices[v2].neighbors << v1
+		if not @vertices[v1].neighbors.include?(v2)
+			@vertices[v1].neighbors << v2
+		end
+		if not @vertices[v2].neighbors.include?(v1)
+			@vertices[v2].neighbors << v1
+		end
 		@edges[[v1,v2]] = @edges[[v2, v1]] = dist[0]
 	end
 end
@@ -160,7 +168,8 @@ if $interfaces.length() == 1
 =end
 		if key2 != key
 			puts("STAY IN THE LIGHT")
-			initEdges << [:"#{key.chomp}".to_sym, :"#{key2.chomp}".to_sym, [INFINITY,0]]
+			puts("Key 1 #{key} Key 2: #{key2}")
+			initEdges << [:"#{key.chomp}".to_sym, :"#{key2.chomp}".to_sym, [0,0]]
 			#$graph.addEdge([:"#{key}", :"#{key2}", [0,0]])
 		end
 	end
@@ -283,7 +292,6 @@ $mutex.synchronize do
 		#path, dist = $graph.shortest_path(:"#{source}".to_sym, key.to_sym)
 	puts($graph)	
 	path, dist = $graph.shortest_path(source, key)
-	puts("here")
 =begin		if not $interfaces.include(key)
 			while $interfaces.include?(path[0])
 				path.shift
