@@ -57,7 +57,7 @@ end
 
 $hostname = `hostname`
 $associations = {}
-$hostname = $hostname.chomp!
+$hostname = $hostname.chomp
 ip_addresses = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{print $1}' | grep -v 127.0.0.1`
 $interfaces = ip_addresses.split('\n')
 $mutex = Mutex.new
@@ -73,7 +73,7 @@ class Graph
 Vertex = Struct.new(:name, :neighbors, :dist, :prev)
 
 def initialize(graph)
-	@vertices = Hash.new { |h,k| h[k] = Vertex.new(k, [], [INFINITY, 0])}
+	@vertices = Hash.new { |h,k| h[k] = Vertex.new(k, [], [0, 0])}
 	@edges = {}
 	graph.each do |(v1, v2, dist)|
 		@vertices[v1].neighbors << v2
@@ -93,6 +93,10 @@ def addEdge(edge)
 		@vertices[v2].neighbors << v1
 		@edges[[v1,v2]] = @edges[[v2, v1]] = dist[0]
 	end
+end
+
+def reset
+	@dijkstra_source = nil
 end
 
 def dijkstra(source)
@@ -149,18 +153,21 @@ end
 initEdges = []
 $interfaces.each do |key|
 	$interfaces.each do |key2|
-		if $interfaces.length() == 1
-			initEdges << [:"#{key.chomp}", :"#{key2.chomp}", [0,0]]
+=begin
+if $interfaces.length() == 1
+			initEdges << [:"#{key.chomp}", :"#{key2.chomp}", [INFINITY,0]]
 		end
+=end
 		if key2 != key
-			initEdges << [:"#{key.chomp}", :"#{key2.chomp}", [0,0]]
+			puts("STAY IN THE LIGHT")
+			initEdges << [:"#{key.chomp}".to_sym, :"#{key2.chomp}".to_sym, [INFINITY,0]]
 			#$graph.addEdge([:"#{key}", :"#{key2}", [0,0]])
 		end
 	end
 end
 #puts(initEdges)
 $graph = Graph.new(initEdges)
-$graph.dijkstra(:"#{$interfaces[0].chomp!}")
+#$graph.dijkstra(:"#{$interfaces[0].chomp}")
 =begin
 g = Graph.new([	[:a, :b, [7,2]],
 		[:a, :c, [9,3]],
@@ -239,7 +246,11 @@ def procLSP(lsp_string, source)
 	info = payload.split(" ")
 	info.each do |link|
 		parse = link.split(":")
-		syms << [:"#{src}", :"#{parse[0]}", [parse[1].to_i, seq.to_i]]
+		if src == parse[0]
+			puts("HOW YOU EAT THE PUSSSY")
+		else
+		syms << [:"#{src}".to_sym, :"#{parse[0]}".to_sym, [parse[1].to_i, seq.to_i]]
+		end
 	#	puts("Syms class: #{syms.class}")
 	#	puts("SYMS: #{syms[0]} #{syms[1]} #{syms[2]}")
 	end
@@ -262,21 +273,30 @@ end
 def dump(filename)
 $mutex.synchronize do
 	file = File.open(filename, 'a+')
-	ret_ip = "#"
-	ret_name = "?"
-	source = $interfaces
-	start = :"#{source}"
-	$graph.dijkstra(start)
+	source = $interfaces[0].chomp.chomp.to_sym
+	#print(source + "Is there a newline")
+#	start = :"#{source}"
+	$graph.reset
+	#$graph.dijkstra(:"#{source}".to_sym)
+	$graph.dijkstra(source)
 	$graph.vertices.each { |key, value|
-		path, dist = $graph.shortest_path(start, key)
+		#path, dist = $graph.shortest_path(:"#{source}".to_sym, key.to_sym)
+	puts($graph)	
+	path, dist = $graph.shortest_path(source, key)
+	puts("here")
 =begin		if not $interfaces.include(key)
 			while $interfaces.include?(path[0])
 				path.shift
 			end
 		end
-=end
+=end		
+		#print("KEY!!!!: #{key}")	
+	if path.length != 1
+			path.shift
+		end
 		file.puts("#{$hostname},#{key},#{dist},#{path[0]},#{$graph.vertices[key].dist[1]}")
 	}
+	file.puts($graph)
 	file.puts("++++++++++++++++++++++++++++++++++++++++++++++++")
 	file.close
 end
@@ -287,7 +307,7 @@ threadA = Thread.new do
 	loop{
 	sleep($routeinterval)
 	$mutex.synchronize do
-		$graph.dijkstra($interfaces[0])
+		$graph.dijkstra(:"#{$interfaces[0].chomp}")
 	end
 	}
 end
