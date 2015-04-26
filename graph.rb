@@ -10,7 +10,7 @@ include Socket::Constants
 options = {:weightfile => nil, :routefile => nil, :dumpinterval => nil, :routeinterval => nil, :length => nil}
 
 parser = OptionParser.new do |opts|
-	opts.banner = "Usage: graph.rb -w [filename] -r [filename] -d [dump interval] -f [Protocol Interval] -m  [Max packet length]"
+	opts.banner = "Usage: graph.rb -w [filename] -r [filename] -d [dump interval] -q [Protocol Interval] -m  [Max packet length]"
 	opts.on('-w', '--weightfile weightfile', 'Weight Input File') do |weight|
 		options[:weightfile] = weight
 	end
@@ -20,11 +20,11 @@ parser = OptionParser.new do |opts|
 	opts.on('-d', '--dump interval(seconds)', 'How often the routing information is sent to a text file') do |delay|
 		options[:dumpinterval] = delay.to_i
 	end
-	opts.on('-f', '--foutetime time(seconds)', Float, 'How often the routing protocol is run') do |rime|
+	opts.on('-q', '--routetime time(seconds)', Float, 'How often the routing protocol is run') do |rime|
 		options[:routeinterval] = rime.to_i
 	end
 	opts.on('-m', '--maxlength length(bytes)', Float, 'Maximum Packet Length in bytes') do |length|
-		puts("here")
+#		puts("here")
 		options[:maxlength] = length.to_i
 	end
 	opts.on('-h', '--help', 'Display Help') do 
@@ -99,8 +99,10 @@ def addEdge(edge)
 		if not @vertices[v2].neighbors.include?(v1)
 			@vertices[v2].neighbors << v1
 		end
-		@vertices[v2].dist = dist
-		@vertices[v1].dist= dist
+		@vertices[v2].dist = [nil, dist[1]]
+		@vertices[v1].dist= [nil, dist[1]]
+		#@vertices[v2].dist = dist
+		#@vertices[v1].dist= dist
 		@edges[[v1,v2]] = @edges[[v2, v1]] = dist[0]
 	end
 end
@@ -179,6 +181,7 @@ if $interfaces.length() == 1
 		end
 =end
 		if key2 != key
+		#	puts("Hey baby, I lvoe you")
 			#puts("Key 1 #{key} Key 2: #{key2}")
 			initEdges << [:"#{key.chomp}".to_sym, :"#{key2.chomp}".to_sym, [0,0]]
 			#$graph.addEdge([:"#{key}", :"#{key2}", [0,0]])
@@ -192,7 +195,7 @@ configFile = File.open($weightfile, 'r')
 while line=configFile.gets()
 	arr = line.split(",")
 	if $interfaces.include?("#{arr[0]}")
-		puts("I have a neighbor #{arr[1]} with cost #{arr[2]}")
+		#puts("I have a neighbor #{arr[1]} with cost #{arr[2]}")
 		$neighbors["#{arr[1]}"] = arr[2].to_i
 	else
 	end
@@ -221,11 +224,15 @@ puts(g)
 
 
 def packetize(str)
+=begin
 	arr = []
 	n = ((str.length.to_f / $maxlen)).ceil
 	0.step(n-1, 1) { |i|
 		arr[i] = str[i*$maxlen, (i+1)*$maxlen]
 	}
+	return arr
+=end
+	arr = str.chars.each_slice($maxlen).map(&:join)
 	return arr
 end
 def sendLSP(lsp_string, source, node)
@@ -246,7 +253,7 @@ def sendLSP(lsp_string, source, node)
 		}
 		socket.close
 	end
-	puts()
+	#puts()
 end
 def procLSP(lsp_string, source)
 	$mutex.synchronize do
@@ -260,7 +267,7 @@ def procLSP(lsp_string, source)
 		#The LSP was from this node, don't send again
 #		return nil
 	if $sequence[src] == nil
-		puts("encountering first sequence number")#No associated sequence number from this link
+#		puts("encountering first sequence number")#No associated sequence number from this link
 		$sequence[src] = seq.to_i
 	elsif $sequence[src] >= seq.to_i
 		#Already received a more recent LSP from this link
@@ -296,15 +303,62 @@ def procLSP(lsp_string, source)
 	return true
 end
 end
-def procPacket(pack_string, source)
+def procSENDMSG(pack_string, socket)
+	if pack_string =~ /SENDMSG (.*) (.*)\\n/
+		destination = $1
+		data = $2
+	end
+		if destination =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
+			nexthop = findNextHopIP(destination)
+		else
+			nexthop = findNextHop(destination)
+		end
+	if (nexthop == nil)
+		puts("At my destination")
+	end
+	puts(nexthop)
+	
+end
+def procPacket(pack_string, source, socket)
 	case pack_string
 		when /LSP (.*)/
 				procLSP(pack_string, source)
 		when /SENDMSG (.*)/
-			procSENDMSG(pack_string)
+			procSENDMSG(pack_string, socket)
 		else
 			puts("Received an invalid message")
 		end
+end
+def findNextHop(hostname)
+	ret_path = []
+	source = $interfaces[0].chomp.chomp.to_sym 
+	$graph.dijkstra(source)
+#	$associations.each { |key, value|
+	small = INFINITY
+			$associations[hostname].each { |ip|
+			path, dist = get_shortest_path(source, ip.to_sym)
+			if dist[0] < small
+				small = dist[0]
+				ret_path = path
+			end	
+	}
+	symInterfaces = $interfaces.map { |x| x.chomp.to_sym}
+	final_path = ret_path - symInterfaces
+	#if not $interfaces.include?(address.to_s)
+#		while $interfaces.include?(ret_path[0].to_s)
+#				ret_path.shift
+#		end
+#	elsif path.length != 1
+#		path.shift
+#	end
+	if (final_path.empty?)
+		return nil
+	end
+	return final_path[0].to_s
+end
+def findNextHopIP(ip)
+	hostname = deassociate(ip)
+	findNextHop(hostname)	
 end
 def dump(filename)
 $mutex.synchronize do
@@ -319,10 +373,15 @@ $mutex.synchronize do
 		#path, dist = $graph.shortest_path(:"#{source}".to_sym, key.to_sym)
 	#puts($graph)	
 	path, dist = $graph.shortest_path(source, key)
-=begin		if not $interfaces.include(key)
-			while $interfaces.include?(path[0])
+	symInterfaces = $interfaces.map { |x| x.chomp.to_sym}
+	ret_path = path - symInterfaces
+=begin
+		if not $interfaces.include?(key.to_s)
+			while $interfaces.include?(path[0].to_s)
 				path.shift
 			end
+		elsif path.length != 1
+			path.shift
 		end
 =end		
 		#print("KEY!!!!: #{key}")	
@@ -330,9 +389,10 @@ $mutex.synchronize do
 #			path.shift
 #		end
 		destHost = deassociate(key.to_s)
-		file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{path.join('->')},#{$graph.vertices[key].dist[1]}")
+#		file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{path.join('->')},#{$graph.vertices[key].dist[1]}")
+		file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{ret_path[0]},#{$graph.vertices[key].dist[1]}")
 	}
-	#file.puts($graph)
+#	file.puts($graph)
 	file.puts("++++++++++++++++++++++++++++++++++++++++++++++++")
 	file.close
 end
@@ -372,11 +432,12 @@ loop {
 		fam, port, *addr = client.getpeername.unpack('nnC4')
 		remote_ip = addr.join('.')
 		data = client.gets("\\n")
-		client.close
+		#client.close
 #		if procPacket(data, remote_ip)
-		#	puts("RECEIVED MSG from #{remote_ip} #{data}")
+#			puts("RECEIVED MSG from #{remote_ip} #{data}")
 #		end
-		procPacket(data, remote_ip)
+		procPacket(data, remote_ip, client)
+		client.close
 	end
 }
 

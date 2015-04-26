@@ -52,11 +52,14 @@ neighbors = {}
 sequence = {}
 interfaces = ip_addresses.split("\n")
 def packetize(str, maxlen)
-	arr = []
+=begin	arr = []
 	n = ((str.length.to_f / maxlen)).ceil
 	0.step(n-1,1) { |i|
 		arr[i] = str[i*maxlen, (i+1)*maxlen]
 	}
+	return arr
+=end
+	arr = str.chars.each_slice(maxlen).map(&:join)
 	return arr
 end
 maxlen = options[:length]
@@ -73,8 +76,9 @@ while true
 		arr = line.split(",")
 		if (interfaces.include?("#{arr[0]}"))
 			if arr[1] =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
-			neighbors["#{arr[1]}"] = arr[2].to_i
-			sequence["#{arr[1]}"] = arr[3].to_i
+			neighbors["#{arr[0]}"] = ["#{arr[1]}", "#{arr[2]}"]		
+#	neighbors["#{arr[1]}"] = arr[2].to_i
+			sequence["#{arr[0]}"] = arr[3].to_i
 			else 
 				puts("read an invalid neighbor #{arr[1]}")
 			end
@@ -85,27 +89,34 @@ while true
 	interfaces.each { |key|
 		str << "#{key.chomp}:0 "
 	}
-	neighbors.each { |key, value|
+=begin	neighbors.each { |key, value|
 		puts("IP ADDRESS: #{key}")
 		puts("COST: #{value}")
 		str << "#{key}:#{value} "
 	}
-	puts(str)
+=end
+#	puts(str)
 	str = str.chop
 	interfaces.each { |key1|
 		key1.chomp!
 		#puts(key1)
 		#puts(str)
 		neighbors.each { |key2, value|
-			lsp_string = "LSP #{key1} #{hostname} #{sequence[key2]} \"#{str}\"\\n"
+#			if key1 = key2
+			#puts("#{value[0]} #{value[1]}")
+			yes = neighbors[key1]
+			lsp_string = "LSP #{key1} #{hostname} #{sequence[key2]} \"#{str} #{yes[0]}:#{yes[1]}\"\\n"
+			#puts(lsp_string)
 			realmsg = packetize(lsp_string, maxlen)
-			socket = Socket.new(AF_INET, SOCK_STREAM, 0)
-			sockaddr = Socket.sockaddr_in(6666, "#{key2}")
+		socket = Socket.new(AF_INET, SOCK_STREAM, 0)
+			sockaddr = Socket.sockaddr_in(6666, "#{value[0]}")
 			socket.connect(sockaddr)
 			realmsg.each { |x|
 				socket.write(x)
 			}
 			socket.close
+
+#			end
 		}
 	}
 	sleep(delay)
