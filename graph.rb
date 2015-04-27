@@ -5,6 +5,7 @@ require 'socket'
 require 'ipaddr'
 require 'optparse'
 require 'set'
+require 'openssl'
 include Socket::Constants
 
 options = {:weightfile => nil, :routefile => nil, :dumpinterval => nil, :routeinterval => nil, :length => nil}
@@ -302,19 +303,125 @@ def procLSP(lsp_string, source)
 	return true
 end
 end
-def procSENDMSG(pack_string, inc_socket)
+def procPING(pack_string, inc_socket)
+#	puts(pack_string)	
+	fam, port, *addr = inc_socket.getpeername.unpack('nnC4')
+	client = addr.join('.')
 	
+	if pack_string =~ /PING (\S+) (\d+) (\d+)/
+		destination = $1
+		numpings = $2
+		delay = $3
+	end
+	if destination =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
+		nexthop = findNextHopIP(destination)
+	else
+		nexthop = findNextHop(destination)
+	end
+	if (nexthop == nil)
+	#	puts("AT my destination, waiting")
+		while true
+			data = inc_socket.gets("\\n") 
+			if data =~ /END/
+				inc_socket.close
+				break
+			elsif data =~ /ping/
+	#			puts("writing response")
+				inc_socket.write("RESPONSE\\n")
+			end
+		end
+	else
+		sock = Socket.new(AF_INET, SOCK_STREAM, 0)
+		sockaddr = Socket.pack_sockaddr_in(6666, "#{nexthop}")
+		sock.connect(sockaddr)
+		realmsg = packetize(pack_string)
+		realmsg.each { |x|
+			sock.write(x)
+		}
+	#	puts("GOing to read from socket to blast pingus") 
+		while true
+	#		puts("trying to read from socket")
+			data = inc_socket.gets("\\n")
+	#		puts("read data = #{data}")
+			realmsg = packetize(data)
+			realmsg.each { |x|
+				sock.write(x)
+			}
+			resp_data = sock.gets("\\n")
+			inc_socket.write(resp_data)
+			if data =~ /END/
+				break
+			end
+		end
+		sock.close
+	end
+end
+def procTRACEROUTE(pack_string, inc_socket)
+	fam, port, *addr = inc_socket.getpeername.unpack('nnC4')
+	client = addr.join('.')
+	if pack_string =~ /TRACEROUTE (\S+) (\d+)/
+		destination = $1
+		hopnumber = $2.to_i
+	end
+	
+	if destination =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
+		nexthop = findNextHopIP(destination)
+	else
+		nexthop = findNextHop(destination)
+	end
+	if (nexthop == nil)
+		realmsg = packetize("#{hopnumber+1} #{$hostname} END\\n")
+		realmsg.each { |x|
+			inc_socket.write(x)
+		}
+		inc_socket.close
+	else
+		realmsg = packetize("#{hopnumber+1} #{$hostname}\\n")
+		realmsg.each { |x|
+			inc_socket.write(x)
+		}
+		sock = Socket.new(AF_INET, SOCK_STREAM, 0)
+		sockaddr = Socket.pack_sockaddr_in(6666, "#{nexthop}")
+		sock.connect(sockaddr)
+		hopmesg = packetize("TRACEROUTE #{destination} #{hopnumber+1}\\n")
+		hopmesg.each { |x|
+			sock.write(x)
+		}
+		while true
+			data = sock.gets("\\n")
+			if data =~ /END/
+				realmsg = packetize(data)
+				realmsg.each { |x|
+					inc_socket.write(x)
+				}
+				sock.close
+				inc_socket.close
+				break
+			else
+				realmsg = packetize(data)
+				realmsg.each { |x|
+					inc_socket.write(x)
+				}
+			end
+		end
+	end
+				
+	
+end	
+def procSENDMSG(pack_string, inc_socket)
+#	puts(pack_string)	
 	fam, port, *addr = inc_socket.getpeername.unpack('nnC4')
 	client = addr.join('.')
 	if pack_string =~ /SENDMSG (\S+) (.*)\\n/
 		destination = $1
 		data = $2
 	end
-		if destination =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
-			nexthop = findNextHopIP(destination)
-		else
-			nexthop = findNextHop(destination)
-		end
+#	puts("about to calculate nexthop")
+	if destination =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
+		nexthop = findNextHopIP(destination)
+	else
+		nexthop = findNextHop(destination)
+	end
 	if (nexthop == nil)
 #		puts("At my destination")
 		realmsg = packetize("Acknowledged\\n")
@@ -332,14 +439,54 @@ def procSENDMSG(pack_string, inc_socket)
 	realmsg.each { |x|
 		sock.write(x)
 	}
+#	puts("waiting to read")
 	data = sock.gets("\\n")
 	replymsg = packetize(data)
 	replymsg.each{ |y|
 		inc_socket.write(y)
 	}
 	sock.close
-	inc_socket.close
 	end
+end
+def procENC(pack_string, socket)
+	fam, port, *addr = inc_socket.getpeername.unpack('nnC4')
+	client = addr.join('.')
+	if pack_string =~ /ENC (\S+)\\n/
+		destination = $1
+	end
+#	puts("about to calculate nexthop")
+	if destination =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
+		nexthop = findNextHopIP(destination)
+	else
+		nexthop = findNextHop(destination)
+	end
+	if (nexthop == nil)
+#		puts("At my destination")
+	#	rsa_pair = OpenSSL::Pkey::RSA.new(2048)
+		realmsg = packetize("Acknowledged\\n")
+		realmsg.each { |x|
+			inc_socket.write(x)
+		}
+		inc_socket.close
+		puts("RECEIVED MSG FROM #{client} #{data}")
+		return
+	else
+	sock = Socket.new(AF_INET, SOCK_STREAM, 0)
+	sockaddr = Socket.pack_sockaddr_in(6666, "#{nexthop}")
+	sock.connect(sockaddr)
+	realmsg = packetize(pack_string)
+	realmsg.each { |x|
+		sock.write(x)
+	}
+#	puts("waiting to read")
+	data = sock.gets("\\n")
+	replymsg = packetize(data)
+	replymsg.each{ |y|
+		inc_socket.write(y)
+	}
+	sock.close
+	end
+	
 end
 def procPacket(pack_string, source, socket)
 	case pack_string
@@ -347,6 +494,12 @@ def procPacket(pack_string, source, socket)
 			procLSP(pack_string, source)
 		when /SENDMSG (.*)/
 			procSENDMSG(pack_string, socket)
+		when /PING (.*)/
+			procPING(pack_string, socket)
+		when /TRACEROUTE (.*)/
+			procTRACEROUTE(pack_string, socket)
+		when /ENC (.*)/
+			procENC(pack_string, socket)
 		else
 			puts("Received an invalid message")
 		end
@@ -355,16 +508,32 @@ def findNextHop(hostname)
 $mutex.synchronize do
 	ret_path = []
 	source = $interfaces[0].chomp.chomp.to_sym 
+	$graph.reset
 	$graph.dijkstra(source)
 #	$associations.each { |key, value|
 	small = INFINITY
-	$associations[hostname].each { |ip|
-			path, dist = $graph.shortest_path(source, ip.to_sym)
-			if dist[0] < small
-				small = dist[0]
+#	puts("about to find smallest cost HOSTNAME: #{hostname}")
+#for some reason $associations[hostname] hangs randomly
+#	puts("#{$associations[hostname.chomp].inspect}")
+	$associations[hostname.chomp].each { |ip|
+#			puts("lol")
+#			puts("comparing costs #{ip}") 
+			path, dist = $graph.shortest_path(source, ip.chomp.to_sym)
+			if dist == nil
+#				puts("distance was nil #{dist}")
+#				puts("path was #{path.join('->')}")
+				next
+			end
+			if dist < small
+#				puts("cost was smaller #{dist}")
+				small = dist
 				ret_path = path
-			end	
+			else 
+#				puts("cost was not smaller #{dist}")
+			end
 	}
+#	puts("found smallest cost")
+	#puts("HOLD back to me, can't afford the medicine")
 	symInterfaces = $interfaces.map { |x| x.chomp.to_sym}
 	final_path = ret_path - symInterfaces
 	#if not $interfaces.include?(address.to_s)
@@ -375,8 +544,10 @@ $mutex.synchronize do
 #		path.shift
 #	end
 	if (final_path.empty?)
+#		puts("at destination")
 		return nil
 	end
+#	puts("returning next hop")
 	return final_path[0].to_s
 end
 end
@@ -416,7 +587,7 @@ $mutex.synchronize do
 #		file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{path.join('->')},#{$graph.vertices[key].dist[1]}")
 		file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{ret_path[0]},#{$graph.vertices[key].dist[1]}")
 	}
-#	file.puts($graph)
+	file.puts($graph)
 	file.puts("++++++++++++++++++++++++++++++++++++++++++++++++")
 	file.close
 end
