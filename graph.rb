@@ -33,7 +33,6 @@ parser = OptionParser.new do |opts|
 	end
 end
 parser.parse!
-puts options[:routeinterval]
 if options[:weightfile] == nil
 	puts("Specify a weightfile with -w")
 	exit
@@ -291,7 +290,7 @@ def procLSP(lsp_string, source)
 #					puts("Adding Edge because #{src} is a neighbor")
 #				end
 #			else 
-					syms << [:"#{src}".to_sym, :"#{parse[0]}".to_sym, [parse[1].to_i, seq.to_i]]
+			syms << [:"#{src}".to_sym, :"#{parse[0]}".to_sym, [parse[1].to_i, seq.to_i]]
 #			end
 		end
 	#	puts("Syms class: #{syms.class}")
@@ -303,8 +302,11 @@ def procLSP(lsp_string, source)
 	return true
 end
 end
-def procSENDMSG(pack_string, socket)
-	if pack_string =~ /SENDMSG (.*) (.*)\\n/
+def procSENDMSG(pack_string, inc_socket)
+	
+	fam, port, *addr = inc_socket.getpeername.unpack('nnC4')
+	client = addr.join('.')
+	if pack_string =~ /SENDMSG (\S+) (.*)\\n/
 		destination = $1
 		data = $2
 	end
@@ -314,15 +316,35 @@ def procSENDMSG(pack_string, socket)
 			nexthop = findNextHop(destination)
 		end
 	if (nexthop == nil)
-		puts("At my destination")
+#		puts("At my destination")
+		realmsg = packetize("Acknowledged\\n")
+		realmsg.each { |x|
+			inc_socket.write(x)
+		}
+		inc_socket.close
+		puts("RECEIVED MSG FROM #{client} #{data}")
+		return
+	else
+	sock = Socket.new(AF_INET, SOCK_STREAM, 0)
+	sockaddr = Socket.pack_sockaddr_in(6666, "#{nexthop}")
+	sock.connect(sockaddr)
+	realmsg = packetize(pack_string)
+	realmsg.each { |x|
+		sock.write(x)
+	}
+	data = sock.gets("\\n")
+	replymsg = packetize(data)
+	replymsg.each{ |y|
+		inc_socket.write(y)
+	}
+	sock.close
+	inc_socket.close
 	end
-	puts(nexthop)
-	
 end
 def procPacket(pack_string, source, socket)
 	case pack_string
 		when /LSP (.*)/
-				procLSP(pack_string, source)
+			procLSP(pack_string, source)
 		when /SENDMSG (.*)/
 			procSENDMSG(pack_string, socket)
 		else
@@ -330,13 +352,14 @@ def procPacket(pack_string, source, socket)
 		end
 end
 def findNextHop(hostname)
+$mutex.synchronize do
 	ret_path = []
 	source = $interfaces[0].chomp.chomp.to_sym 
 	$graph.dijkstra(source)
 #	$associations.each { |key, value|
 	small = INFINITY
-			$associations[hostname].each { |ip|
-			path, dist = get_shortest_path(source, ip.to_sym)
+	$associations[hostname].each { |ip|
+			path, dist = $graph.shortest_path(source, ip.to_sym)
 			if dist[0] < small
 				small = dist[0]
 				ret_path = path
@@ -355,6 +378,7 @@ def findNextHop(hostname)
 		return nil
 	end
 	return final_path[0].to_s
+end
 end
 def findNextHopIP(ip)
 	hostname = deassociate(ip)

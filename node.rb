@@ -26,3 +26,5 @@ end
 fork do
 exec("ruby /home/core/OverlayRPC2/sendLSP.rb -d #{routeinterval.to_i} -l #{length} -t 3 -f #{weightfile} ")
 end 
+exec("ruby /home/core/OverlayRPC2/client.rb -d #{routeinterval.to_i} -m #{length}")
+
