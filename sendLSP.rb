@@ -46,7 +46,7 @@ end
 hostname = `hostname`
 hostname = hostname.chomp!
 
-ip_addresses = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{print $1}' | grep -v 127.0.0.1`
+ip_addresses = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{print $1}' | grep -v 127.0.0.1 | grep -v ^172`
 
 neighbors = {}
 sequence = {}
@@ -105,16 +105,23 @@ while true
 #			if key1 = key2
 			#puts("#{value[0]} #{value[1]}")
 			yes = neighbors[key1]
+		#	puts(yes)
+		#	puts("#{key1} #{key2}")
 			lsp_string = "LSP #{key1} #{hostname} #{sequence[key2]} \"#{str} #{yes[0]}:#{yes[1]}\"\\n"
 			#puts(lsp_string)
 			realmsg = packetize(lsp_string, maxlen)
-		socket = Socket.new(AF_INET, SOCK_STREAM, 0)
+		begin
+			socket = Socket.new(AF_INET, SOCK_STREAM, 0)
 			sockaddr = Socket.sockaddr_in(6666, "#{value[0]}")
 			socket.connect(sockaddr)
 			realmsg.each { |x|
 				socket.write(x)
 			}
 			socket.close
+		rescue Errno::ECONNREFUSED
+		#	puts("Server not up yet")
+		#	sleep(5)
+		end
 
 #			end
 		}

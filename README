@@ -43,14 +43,17 @@ The program will not run correctly without a proper config file.
 -------------------
 Configuration File
 -------------------
+We have included an example config file in our zipfile.
 The configuration file must be a single line in the following format.
-
 <Maximum Packet Size>,<WeightFile>,<RoutingUpdateInterval>,<RoutingTableFile>,<DumpInterval>,
 
 BE SURE TO INCLUDE A COMMA AT THE END OF THE CONFIG FILE.
 As mentioned before the file node.rb is a shell script that
 will execute the server and give control to the client. It might
 be neccesary to run chmod a+x node.rb before execution.
+
+The routing tables will be dumped in the file you specified appended with the string "$HOSTNAME.dump"
+In our example config file, the dump files were named /tmp/n*.dump where * is the number of the node.
 
 
 ---------------------
@@ -60,13 +63,18 @@ To Test the program, simply run node.rb with a specified configuration
 file on each of the nodes. Make sure to run gen_weights before hand in
 order to make sure that the nodes are getting dynamic information.
 
+In our test cases, we have run the program "ruby node.rb config.txt" on
+each node. This brought us to the client's command interface and then we began sending messages.
+If you are able to execute the above command simultaneously, you might not see the client shell.
+You can start another instance of the client by running "ruby client.rb -m [Packet Size]".
+
 --------
 Usage
 --------
 When the client comes up, you will be met with a loading bar. This loading
-bar is neccesary so that the network converges properly. Once loading has finished.
+bar is there so that the network converges properly. Once loading has finished.
 You will be met with a command window where you can enter a variety of commands.
-Commands are case sensitive
+Commands are not case sensitive
 
 SENDMSG <node | ip address> <MSG>
 TRACEROUTE <node | ip address>
@@ -78,8 +86,8 @@ SENDMSG will send a message to a node, and will tell you whether or not the mess
 
 TRACEROUTE will print the order of nodes visited as a message passes through the network
 
-PING will send a specified amount, n, pings to the receiving node. Should the node responds within
-the time specified by the delay, the client will print RESPONSE-PING from <host> -- if not, an error message will be printed.
+PING will send a specified amount, n, pings to the receiving node. Should the node responds within 5 seconds,
+the client will print RESPONSE-PING from <host> -- if not, an error message will be printed.
 
 ENC will send an encrypted message to the destination node. Currently, if it is impossible for the message to be delivered,
 the client will print an error. When message delivery is succesful,the client will tell you that the message was sent succesfully.
@@ -116,7 +124,7 @@ client.rb
 
 Usage: node.rb -m [maxlength]
     -m, --maxlength length           Maxmimum PacketLength
-    -d, --delay delay                Initial routing delay
+    -d, --delay delay                Initial routing delay [NOT USED]
 
 ---------------------
 Future Extensions 
@@ -126,11 +134,14 @@ If you get this far into our README, Please give us feedback, because these exte
 were not originally apart of our design spec. If you think that they are a bad idea,
 please send an email to drakeling@gmail.com, akyei@umd.edu or dsanvar@terpmail.umd.edu. 
 
-SEXYTTP (Secure Encrypted X to Y Text Transport Protocol) - Transport Encrypted Text files (Sexy Files) between two end nodes,  
+Encrypted Text Transport -  Transport Encrypted Text files between two end nodes,  
 
-CNDM (Conditional Notation for Defense Message) - The client can force the server into a password mode, 
+Password Protected Mode - The client can force the server into a password mode, 
 forcing all other clients who wish to send to the server to enter a password.
 
-XXXCHAT (X to X' Xtendible Chat) - Engage in an encrypted chat with a node with consent. For an added layer of security, client can initiate CNDM before starting an XXXCHAT.
+Encrypted Chat Mode - Engage in an encrypted chat with a node with consent. For an added layer of security, client can initiate Password Mode before starting an Encrypted Chat.
+
+Adversarial Routing - Avoid black hole attacks by only acknowledging LSPs within a certain range.
+We probably will leave this for last since it is more complicated that the others.
 
 

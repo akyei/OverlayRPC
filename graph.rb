@@ -58,7 +58,7 @@ $neighbors = {}
 $hostname = `hostname`
 $associations = {}
 $hostname = $hostname.chomp
-ip_addresses = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{print $1}' | grep -v 127.0.0.1`
+ip_addresses = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{print $1}' | grep -v 127.0.0.1 | grep -v ^172`
 $interfaces = ip_addresses.split("\n")
 $mutex = Mutex.new
 $sequence = {}
@@ -173,6 +173,10 @@ def associate(node, src)
 	end
 end
 initEdges = []
+if $interfaces.length == 1 then
+	initEdges << [:"#{$interfaces[0].chomp}".to_sym, :"#{$interfaces[0].chomp}".to_sym, [0, 0]]
+	associate($hostname, $interfaces[0])
+end
 $interfaces.each do |key|
 	$interfaces.each do |key2|
 =begin
@@ -348,7 +352,11 @@ def procPING(pack_string, inc_socket)
 				sock.write(x)
 			}
 			resp_data = sock.gets("\\n")
-			inc_socket.write(resp_data)
+			realmsg = packetize(resp_data)
+			realmsg.each { |x|
+				inc_socket.write(x)
+			}
+			#inc_socket.write(resp_data)
 			if data =~ /END/
 				break
 			end
@@ -412,9 +420,10 @@ def procSENDMSG(pack_string, inc_socket)
 #	puts(pack_string)	
 	fam, port, *addr = inc_socket.getpeername.unpack('nnC4')
 	client = addr.join('.')
-	if pack_string =~ /SENDMSG (\S+) (.*)\\n/
+	if pack_string =~ /SENDMSG (\S+) (\S+) (.*)\\n/
 		destination = $1
-		data = $2
+		sending_ip = $2
+		data = $3
 	end
 #	puts("about to calculate nexthop")
 	if destination =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
@@ -429,7 +438,8 @@ def procSENDMSG(pack_string, inc_socket)
 			inc_socket.write(x)
 		}
 		inc_socket.close
-		puts("RECEIVED MSG FROM #{client} #{data}")
+		puts("RECEIVED MSG FROM #{sending_ip} #{data}")
+		print("Enter a command (type help for help):")
 		return
 	else
 	sock = Socket.new(AF_INET, SOCK_STREAM, 0)
@@ -475,7 +485,8 @@ def procENC(pack_string, inc_socket)
 		enc_data = enc_data.gsub("\\n","")
 		#puts(enc_data)
 		unenc_data = rsa_priv.private_decrypt(enc_data)
-		puts("RECEIVED ENCRYPTED MSG FROM #{client} #{unenc_data}")
+		puts("\nRECEIVED ENCRYPTED MSG FROM #{client} #{unenc_data}")
+		print("Enter a command (type help for help):")
 		inc_socket.write("Acknowledged\\n")
 		return
 	else
@@ -571,11 +582,12 @@ def findNextHopIP(ip)
 end
 def dump(filename)
 $mutex.synchronize do
-	file = File.open(filename, 'a+')
+	file = File.open(filename, 'w')
 	source = $interfaces[0].chomp.chomp.to_sym
 	#print(source + "Is there a newline")
 #	start = :"#{source}"
 	$graph.reset
+	output = []
 	#$graph.dijkstra(:"#{source}".to_sym)
 	$graph.dijkstra(source)
 	$graph.vertices.each { |key, value|
@@ -598,10 +610,17 @@ $mutex.synchronize do
 #			path.shift
 #		end
 		destHost = deassociate(key.to_s)
-#		file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{path.join('->')},#{$graph.vertices[key].dist[1]}")
-		file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{ret_path[0]},#{$graph.vertices[key].dist[1]}")
+		if destHost == nil
+			next
+		end
+		#file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{ret_path[0]},#{$graph.vertices[key].dist[1]}")
+		output << "#{$hostname},#{key}(#{destHost}),#{dist},#{ret_path[0]},#{$graph.vertices[key].dist[1]}"
 	}
-	file.puts($graph)
+	sorted_output = output.sort
+	sorted_output.each { |x|
+		file.puts(x)
+	}
+	#file.puts($graph)
 	file.puts("++++++++++++++++++++++++++++++++++++++++++++++++")
 	file.close
 end
@@ -613,6 +632,7 @@ def deassociate(ip)
 			return terp
 		end
 	}
+	return nil
 end
 	
  

@@ -26,7 +26,9 @@ end
 
 $maxlen = options[:maxlength]
 $delay = options[:delay]
-$delay = 10
+$delay = 15
+$sending_ip = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{print $1}' | grep -v 127.0.0.1 | grep -v ^172`
+$hostname = $sending_ip.split("\n")[0].chomp
 def encrypt_RSA(key,message)
 	key.public_encrypt(message,OPENSSL::PKey::RSA::PKCS1_OAEP_PADDING)
 end
@@ -35,7 +37,7 @@ def packetize(str)
 	return str.chars.each_slice($maxlen)
 end
 
-
+puts("For a more enjoyable experience, Please allow the message client to calculate routes.\nMessages can still be received during this time")
 loading = 'Loading ['
 $delay.times do |d|
 	j = d+1
@@ -43,7 +45,7 @@ $delay.times do |d|
 	sleep(1)
 	loading << "="
 	print "\r"
-	print loading + "] #{(j.to_f/$delay) * 100} %"
+	print loading + "] #{((j.to_f/$delay) * 100).to_i} %"
 	$stdout.flush
 end
 
@@ -55,11 +57,11 @@ print("Enter a command (Type help for help):")
 input = gets
 
 	case input
-		when /^SENDMSG (\S+) (.*)/
+		when /^SENDMSG (\S+) (.*)/i
 			timeout = 10
 			dest = $1
 			data = $2
-			mesg = "SENDMSG #{dest} #{data}\\n"
+			mesg = "SENDMSG #{dest} #{$hostname} #{data}\\n"
 			realmsg = packetize(mesg)
 
 			sock = Socket.new(AF_INET, SOCK_STREAM, 0)
@@ -88,8 +90,8 @@ input = gets
 
 
 		when /^help/i
-			puts("Client commands are of the following form\nSENDMSG [DST] [MSG]\nPING [DST] [NumPings] [DELAY]\nTRACEROUTE [DST]\nENC [DST] [MSG]")
-		when /^PING (\S+) (\d+) (\d+)/
+			puts("Client commands are of the following form\nSENDMSG [DST] [MSG]\nPING [DST] [NumPings] [DELAY]\nTRACEROUTE [DST]\nENC [DST] [MSG]\nEXIT")
+		when /^PING (\S+) (\d+) (\d+)/i
 			dest = $1
 			numpings = $2.to_i
 			delay = $3.to_i
@@ -105,7 +107,7 @@ input = gets
 			numpings.times do
 				sock.write("ping\\n")
 				begin
-					Timeout::timeout delay do
+					Timeout::timeout 5 do
 						reply = sock.gets("\\n")
 						puts("RESPONSE-PING from #{dest}")
 					end
@@ -116,7 +118,9 @@ input = gets
 			end
 				sock.write("END\\n")
 				sock.close
-		when /^TRACEROUTE (\S+)/
+		when /^EXIT/i
+			exit
+		when /^TRACEROUTE (\S+)/i
 			dest = $1
 			realmsg = packetize("TRACEROUTE #{dest} 0\\n")
 			sock = Socket.new(AF_INET, SOCK_STREAM, 0)
@@ -141,7 +145,7 @@ input = gets
 				end
 			end
 					
-		when /^ENC (\S+) (.*)/
+		when /^ENC (\S+) (.*)/i
 			dest = $1
 			mesg = $2
 			realmsg = packetize("ENC #{dest}\\n")
@@ -179,7 +183,7 @@ input = gets
 			if reply =~ /Acknowledged/
 				puts("Encrypted message #{enc_msg} delivered succesfully")
 			else
-				puts("Encrypted message sent, however the recipient sent something other than an acknowledgement: #{reply}")
+				puts("Encrypted message sent")#, however the recipient sent something other than an acknowledgement: #{reply}")
 			end
 		else 
 			puts("Invalid command, type help for list of valid commands")
