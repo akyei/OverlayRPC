@@ -88,7 +88,7 @@ input = gets
 
 
 		when /^help/i
-			puts("Client commands are of the following form\nSENDMSG [DST] [MSG]\nPING [DST] [NumPings] [DELAY]\nTRACEROUTE [DST]")
+			puts("Client commands are of the following form\nSENDMSG [DST] [MSG]\nPING [DST] [NumPings] [DELAY]\nTRACEROUTE [DST]\nENC [DST] [MSG]")
 		when /^PING (\S+) (\d+) (\d+)/
 			dest = $1
 			numpings = $2.to_i
@@ -129,7 +129,7 @@ input = gets
 				begin
 					Timeout::timeout 10 do
 						data = sock.gets("\\n")
-						output = data.gsub("END", "")
+						output = data.gsub("END", "").gsub("\\n", "")
 						#output = output.slice("\\n")
 						puts(output)
 					end
@@ -141,6 +141,46 @@ input = gets
 				end
 			end
 				
+		when /^ENC (\S+) (.*)/
+			dest = $1
+			mesg = $2
+			realmsg = packetize("ENC #{dest}\\n")
+			sock = Socket.new(AF_INET, SOCK_STREAM, 0)
+			sockaddr = Socket.pack_sockaddr_in(6666, 'localhost')
+			sock.connect(sockaddr)
+			realmsg.each { |x|
+				sock.write(x)
+			}
+			pemfile = ""
+			begin
+				Timeout::timeout 10 do
+					pemfile = sock.gets("\\n")
+				end
+			rescue Timeout::Error
+					puts("Destination took too long to reply")
+			end
+				
+			pemfile = pemfile.gsub("\\n","")
+			#puts(pemfile)
+			public_key = OpenSSL::PKey::RSA.new(pemfile)
+			enc_msg = public_key.public_encrypt(mesg)
+			realmsg = packetize("#{enc_msg}\\n")
+			realmsg.each { |x|
+				sock.write(x)
+			}
+			reply = ""
+			begin 
+				Timeout::timeout 10 do
+					reply = sock.gets("\\n")
+				end
+			rescue Timeout::Error
+				puts("Destination sent public key, but did not send acknowledgement in time")
+			end
+			if reply =~ /Acknowledged/
+				puts("Encrypted message #{enc_msg} delivered succesfully")
+			else
+				puts("Encrypted message sent, however the recipient sent something other than an acknowledgement: #{reply}")
+			end
 		else 
 			puts("Invalid command, type help for list of valid commands")
 		end

@@ -448,11 +448,12 @@ def procSENDMSG(pack_string, inc_socket)
 	sock.close
 	end
 end
-def procENC(pack_string, socket)
+def procENC(pack_string, inc_socket)
 	fam, port, *addr = inc_socket.getpeername.unpack('nnC4')
 	client = addr.join('.')
 	if pack_string =~ /ENC (\S+)\\n/
 		destination = $1
+		#puts("REGEX MATCHED")
 	end
 #	puts("about to calculate nexthop")
 	if destination =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
@@ -462,15 +463,23 @@ def procENC(pack_string, socket)
 	end
 	if (nexthop == nil)
 #		puts("At my destination")
-	#	rsa_pair = OpenSSL::Pkey::RSA.new(2048)
-		realmsg = packetize("Acknowledged\\n")
+		rsa_priv = OpenSSL::PKey::RSA.new(2048)
+		rsa_pub = rsa_priv.public_key
+		rsa_pem = rsa_pub.to_pem
+#		puts(rsa_pem)
+		realmsg = packetize("#{rsa_pem}\\n")
 		realmsg.each { |x|
 			inc_socket.write(x)
 		}
-		inc_socket.close
-		puts("RECEIVED MSG FROM #{client} #{data}")
+		enc_data = inc_socket.gets("\\n")
+		enc_data = enc_data.gsub("\\n","")
+		#puts(enc_data)
+		unenc_data = rsa_priv.private_decrypt(enc_data)
+		puts("RECEIVED ENCRYPTED MSG FROM #{client} #{unenc_data}")
+		inc_socket.write("Acknowledged\\n")
 		return
 	else
+	#puts("writing initial message to next hop #{pack_string}")
 	sock = Socket.new(AF_INET, SOCK_STREAM, 0)
 	sockaddr = Socket.pack_sockaddr_in(6666, "#{nexthop}")
 	sock.connect(sockaddr)
@@ -483,6 +492,11 @@ def procENC(pack_string, socket)
 	replymsg = packetize(data)
 	replymsg.each{ |y|
 		inc_socket.write(y)
+	}
+	data = inc_socket.gets("\\n")
+	encmsg = packetize(data)
+	encmsg.each { |z|
+		sock.write(z)
 	}
 	sock.close
 	end
