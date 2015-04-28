@@ -26,7 +26,7 @@ end
 
 $maxlen = options[:maxlength]
 $delay = options[:delay]
-
+$delay = 10
 def encrypt_RSA(key,message)
 	key.public_encrypt(message,OPENSSL::PKey::RSA::PKCS1_OAEP_PADDING)
 end
@@ -107,7 +107,7 @@ input = gets
 				begin
 					Timeout::timeout delay do
 						reply = sock.gets("\\n")
-						puts("RESPONSE-PINGU from #{dest}")
+						puts("RESPONSE-PING from #{dest}")
 					end
 				rescue Timeout::Error
 					puts("PING ERROR: HOST UNREACHABLE")
@@ -140,7 +140,7 @@ input = gets
 					break
 				end
 			end
-				
+					
 		when /^ENC (\S+) (.*)/
 			dest = $1
 			mesg = $2

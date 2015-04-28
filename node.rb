@@ -21,10 +21,13 @@ exit
 end
 #puts("ruby /home/core/OverlayRPC2/graph.rb -w #{weightfile} -r #{routefile} -d #{dumpinterval} -q #{routeinterval} -m #{length}")
 fork do
-exec("ruby /home/core/OverlayRPC2/graph.rb -w #{weightfile} -r #{routefile} -d #{dumpinterval} -q #{routeinterval} -m #{length} ")
+exec("ruby graph.rb -w #{weightfile} -r #{routefile} -d #{dumpinterval} -q #{routeinterval} -m #{length} ")
+#exec("ruby /home/core/OverlayRPC2/graph.rb -w #{weightfile} -r #{routefile} -d #{dumpinterval} -q #{routeinterval} -m #{length} ")
 end
 fork do
-exec("ruby /home/core/OverlayRPC2/sendLSP.rb -d #{routeinterval.to_i} -l #{length} -t 3 -f #{weightfile} ")
+exec("ruby sendLSP.rb -d #{routeinterval.to_i} -l #{length} -t 3 -f #{weightfile} ")
+#exec("ruby /home/core/OverlayRPC2/sendLSP.rb -d #{routeinterval.to_i} -l #{length} -t 3 -f #{weightfile} ")
 end 
-exec("ruby /home/core/OverlayRPC2/client.rb -d #{routeinterval.to_i} -m #{length}")
+exec("ruby client.rb -d #{routeinterval.to_i} -m #{length}")
+#exec("ruby home/core/OverlayRPC2/client.rb -d #{routeinterval.to_i} -m #{length}")
 
