@@ -54,6 +54,8 @@ if options[:maxlength] == nil
 	puts("Maximum Packet Length not specified, defaulting to 20 bytes")
 	options[:maxlength] = 20
 end
+
+#Global Variable Setup
 $neighbors = {}
 $hostname = `hostname`
 $associations = {}
@@ -68,6 +70,8 @@ $dumpinterval = options[:dumpinterval]
 $weightfile = options[:weightfile]
 $routefile = options[:routefile]
 $routefile << "#{$hostname}.dump"
+
+
 class Graph
 
 Vertex = Struct.new(:name, :neighbors, :dist, :prev)
@@ -152,16 +156,10 @@ def to_s
 	"#<%s vertices=%p edges=%p>" % [self.class.name, @vertices.values, @edges]
 end
 end
-#main
-=begin
-if (ARGV[0] == nil)
-	puts("YOU MUST SPECIFY A CONFIG FILE")
-	exit
-end
-=end
-#puts($interfaces)
 
-#$graph = Graph.new
+
+
+
 def associate(node, src)
 	#puts("#{node} #{src}")
 	if $associations[node] == nil
@@ -172,6 +170,8 @@ def associate(node, src)
 		$associations[node].flatten!
 	end
 end
+#Initialize a the first nodes in the graph
+
 initEdges = []
 if $interfaces.length == 1 then
 	initEdges << [:"#{$interfaces[0].chomp}".to_sym, :"#{$interfaces[0].chomp}".to_sym, [0, 0]]
@@ -179,11 +179,6 @@ if $interfaces.length == 1 then
 end
 $interfaces.each do |key|
 	$interfaces.each do |key2|
-=begin
-if $interfaces.length() == 1
-			initEdges << [:"#{key.chomp}", :"#{key2.chomp}", [INFINITY,0]]
-		end
-=end
 		if key2 != key
 		#	puts("Hey baby, I lvoe you")
 			#puts("Key 1 #{key} Key 2: #{key2}")
@@ -193,52 +188,23 @@ if $interfaces.length() == 1
 		end
 	end
 end
-#puts(initEdges)
 $graph = Graph.new(initEdges)
 configFile = File.open($weightfile, 'r')
 while line=configFile.gets()
 	arr = line.split(",")
 	if $interfaces.include?("#{arr[0]}")
-		#puts("I have a neighbor #{arr[1]} with cost #{arr[2]}")
 		$neighbors["#{arr[1]}"] = arr[2].to_i
 	else
 	end
 end
 configFile.close
-#$graph.dijkstra(:"#{$interfaces[0].chomp}")
-=begin
-g = Graph.new([	[:a, :b, [7,2]],
-		[:a, :c, [9,3]],
-                [:a, :f, [14,4]],
-                [:b, :c, [10,2]],
-                [:b, :d, [15,3]],
-                [:c, :d, [11,4]],
-                [:c, :f, [2,4]],
-                [:d, :e, [6,6]],
-                [:e, :f, [9,8]],
-              ])
-start, stop = :a, :e
-puts(g)
-path, dist = g.shortest_path(start, stop)
-puts("shortest path from #{start} to #{stop} has cost #{dist}")
-puts(path.join(" -> "))
-g.addEdge([[:a, :c, [6, 4]]])
-puts(g)
-=end
 
 
 def packetize(str)
-=begin
-	arr = []
-	n = ((str.length.to_f / $maxlen)).ceil
-	0.step(n-1, 1) { |i|
-		arr[i] = str[i*$maxlen, (i+1)*$maxlen]
-	}
-	return arr
-=end
 	arr = str.chars.each_slice($maxlen).map(&:join)
 	return arr
 end
+
 def sendLSP(lsp_string, source, node)
 	if (node == $hostname)
 		return
@@ -247,7 +213,6 @@ def sendLSP(lsp_string, source, node)
 		if key == source
 			next
 		end
-		#puts("sending to #{key}")
 		realmsg = packetize(lsp_string)
 		socket = Socket.new(AF_INET, SOCK_STREAM, 0)
 		sockaddr = Socket.sockaddr_in(6666, "#{key}")
@@ -257,7 +222,6 @@ def sendLSP(lsp_string, source, node)
 		}
 		socket.close
 	end
-	#puts()
 end
 def procLSP(lsp_string, source)
 	$mutex.synchronize do
@@ -267,21 +231,15 @@ def procLSP(lsp_string, source)
 		seq = $3
 		payload = $4
 	end
-#	if (node == $hostname)
-		#The LSP was from this node, don't send again
-#		return nil
 	if $sequence[src] == nil
-#		puts("encountering first sequence number")#No associated sequence number from this link
 		$sequence[src] = seq.to_i
 	elsif $sequence[src] >= seq.to_i
 		#Already received a more recent LSP from this link
 		return 
 	end
-#	puts("found a new sequence number #{$seqeunce}")
 	$sequence[src] = seq.to_i
 	associate(node, src)
 	syms = []
-#	puts("Syms class: #{syms.class}")
 	info = payload.split(" ")
 	info.each do |link|
 		parse = link.split(":")
@@ -289,26 +247,15 @@ def procLSP(lsp_string, source)
 		elsif not parse[0] =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
 			next
 		else
-#			if $interfaces.include?(parse[0])
-#				if $neighbors.has_key?(src)
-#					syms << [:"#{src}".to_sym, :"#{parse[0]}".to_sym, [parse[1].to_i, seq.to_i]]
-#					puts("Adding Edge because #{src} is a neighbor")
-#				end
-#			else 
 			syms << [:"#{src}".to_sym, :"#{parse[0]}".to_sym, [parse[1].to_i, seq.to_i]]
-#			end
 		end
-	#	puts("Syms class: #{syms.class}")
-	#	puts("SYMS: #{syms[0]} #{syms[1]} #{syms[2]}")
 	end
 	$graph.addEdge(syms)
-	#puts("about to send lsp to neighbors")
 	sendLSP(lsp_string, source, node)
 	return true
-end
+	end
 end
 def procPING(pack_string, inc_socket)
-#	puts(pack_string)	
 	fam, port, *addr = inc_socket.getpeername.unpack('nnC4')
 	client = addr.join('.')
 	
@@ -323,14 +270,12 @@ def procPING(pack_string, inc_socket)
 		nexthop = findNextHop(destination)
 	end
 	if (nexthop == nil)
-	#	puts("AT my destination, waiting")
 		while true
 			data = inc_socket.gets("\\n") 
 			if data =~ /END/
 				inc_socket.close
 				break
 			elsif data =~ /ping/
-	#			puts("writing response")
 				inc_socket.write("RESPONSE\\n")
 			end
 		end
@@ -342,11 +287,8 @@ def procPING(pack_string, inc_socket)
 		realmsg.each { |x|
 			sock.write(x)
 		}
-	#	puts("GOing to read from socket to blast pingus") 
 		while true
-	#		puts("trying to read from socket")
 			data = inc_socket.gets("\\n")
-	#		puts("read data = #{data}")
 			realmsg = packetize(data)
 			realmsg.each { |x|
 				sock.write(x)
@@ -356,7 +298,6 @@ def procPING(pack_string, inc_socket)
 			realmsg.each { |x|
 				inc_socket.write(x)
 			}
-			#inc_socket.write(resp_data)
 			if data =~ /END/
 				break
 			end
@@ -417,7 +358,6 @@ def procTRACEROUTE(pack_string, inc_socket)
 	
 end	
 def procSENDMSG(pack_string, inc_socket)
-#	puts(pack_string)	
 	fam, port, *addr = inc_socket.getpeername.unpack('nnC4')
 	client = addr.join('.')
 	if pack_string =~ /SENDMSG (\S+) (\S+) (.*)\\n/
@@ -425,14 +365,12 @@ def procSENDMSG(pack_string, inc_socket)
 		sending_ip = $2
 		data = $3
 	end
-#	puts("about to calculate nexthop")
 	if destination =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
 		nexthop = findNextHopIP(destination)
 	else
 		nexthop = findNextHop(destination)
 	end
 	if (nexthop == nil)
-#		puts("At my destination")
 		realmsg = packetize("Acknowledged\\n")
 		realmsg.each { |x|
 			inc_socket.write(x)
@@ -487,7 +425,11 @@ def procENC(pack_string, inc_socket)
 		unenc_data = rsa_priv.private_decrypt(enc_data)
 		puts("\nRECEIVED ENCRYPTED MSG FROM #{client} #{unenc_data}")
 		print("Enter a command (type help for help):")
-		inc_socket.write("Acknowledged\\n")
+		realmsg = packetize("Acknowledged\\n")
+		realmsg.each { |x|
+			inc_socket.write(x)
+		}
+		#inc_socket.write("Acknowledged\\n")
 		return
 	else
 	#puts("writing initial message to next hop #{pack_string}")
@@ -498,7 +440,6 @@ def procENC(pack_string, inc_socket)
 	realmsg.each { |x|
 		sock.write(x)
 	}
-#	puts("waiting to read")
 	data = sock.gets("\\n")
 	replymsg = packetize(data)
 	replymsg.each{ |y|
@@ -535,44 +476,23 @@ $mutex.synchronize do
 	source = $interfaces[0].chomp.chomp.to_sym 
 	$graph.reset
 	$graph.dijkstra(source)
-#	$associations.each { |key, value|
 	small = INFINITY
-#	puts("about to find smallest cost HOSTNAME: #{hostname}")
-#for some reason $associations[hostname] hangs randomly
-#	puts("#{$associations[hostname.chomp].inspect}")
 	$associations[hostname.chomp].each { |ip|
-#			puts("lol")
-#			puts("comparing costs #{ip}") 
 			path, dist = $graph.shortest_path(source, ip.chomp.to_sym)
 			if dist == nil
-#				puts("distance was nil #{dist}")
-#				puts("path was #{path.join('->')}")
 				next
 			end
 			if dist < small
-#				puts("cost was smaller #{dist}")
 				small = dist
 				ret_path = path
 			else 
-#				puts("cost was not smaller #{dist}")
 			end
 	}
-#	puts("found smallest cost")
-	#puts("HOLD back to me, can't afford the medicine")
 	symInterfaces = $interfaces.map { |x| x.chomp.to_sym}
 	final_path = ret_path - symInterfaces
-	#if not $interfaces.include?(address.to_s)
-#		while $interfaces.include?(ret_path[0].to_s)
-#				ret_path.shift
-#		end
-#	elsif path.length != 1
-#		path.shift
-#	end
 	if (final_path.empty?)
-#		puts("at destination")
 		return nil
 	end
-#	puts("returning next hop")
 	return final_path[0].to_s
 end
 end
@@ -584,43 +504,23 @@ def dump(filename)
 $mutex.synchronize do
 	file = File.open(filename, 'w')
 	source = $interfaces[0].chomp.chomp.to_sym
-	#print(source + "Is there a newline")
-#	start = :"#{source}"
 	$graph.reset
 	output = []
-	#$graph.dijkstra(:"#{source}".to_sym)
 	$graph.dijkstra(source)
 	$graph.vertices.each { |key, value|
-		#path, dist = $graph.shortest_path(:"#{source}".to_sym, key.to_sym)
-	#puts($graph)	
 	path, dist = $graph.shortest_path(source, key)
 	symInterfaces = $interfaces.map { |x| x.chomp.to_sym}
 	ret_path = path - symInterfaces
-=begin
-		if not $interfaces.include?(key.to_s)
-			while $interfaces.include?(path[0].to_s)
-				path.shift
-			end
-		elsif path.length != 1
-			path.shift
-		end
-=end		
-		#print("KEY!!!!: #{key}")	
-#	if path.length != 1
-#			path.shift
-#		end
 		destHost = deassociate(key.to_s)
 		if destHost == nil
 			next
 		end
-		#file.puts("#{$hostname},#{key}(#{destHost}),#{dist},#{ret_path[0]},#{$graph.vertices[key].dist[1]}")
 		output << "#{$hostname},#{key}(#{destHost}),#{dist},#{ret_path[0]},#{$graph.vertices[key].dist[1]}"
 	}
 	sorted_output = output.sort
 	sorted_output.each { |x|
 		file.puts(x)
 	}
-	#file.puts($graph)
 	file.puts("++++++++++++++++++++++++++++++++++++++++++++++++")
 	file.close
 end
@@ -648,12 +548,8 @@ threadB = Thread.new do
 	loop { 
 		sleep($dumpinterval)
 		dump($routefile)
-	#	$mutex.synchronize do
-	#		puts($graph)
-	#	end
 	}
 end
-#=begin
 server = TCPServer.new('0.0.0.0', 6666)
 loop {
 	Thread.start(server.accept) do |client|
@@ -661,10 +557,6 @@ loop {
 		fam, port, *addr = client.getpeername.unpack('nnC4')
 		remote_ip = addr.join('.')
 		data = client.gets("\\n")
-		#client.close
-#		if procPacket(data, remote_ip)
-#			puts("RECEIVED MSG from #{remote_ip} #{data}")
-#		end
 		procPacket(data, remote_ip, client)
 		client.close
 	end
