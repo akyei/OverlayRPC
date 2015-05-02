@@ -5,6 +5,11 @@ require 'timeout'
 require 'openssl'
 include Socket::Constants
 
+class Time
+	def to_ms
+		(self.to_f * 1000.0)
+	end
+end
 options = {:maxlength => nil, :delay => nil}
 
 parser = OptionParser.new do |opts|
@@ -90,7 +95,7 @@ input = gets
 
 
 		when /^help/i
-			puts("Client commands are of the following form\nSENDMSG [DST] [MSG]\nPING [DST] [NumPings] [DELAY]\nTRACEROUTE [DST]\nENC [DST] [MSG]\nEXIT")
+			puts("Client commands are of the following form\nSENDMSG [DST] [MSG]\nPING [DST] [NumPings] [DELAY]\nTRACEROUTE [DST]\nENC [DST] [MSG]\nEXIT\nONION [DST] [MSG]")
 		when /^PING (\S+) (\d+) (\d+)/i
 			dest = $1
 			numpings = $2.to_i
@@ -125,6 +130,7 @@ input = gets
 			realmsg = packetize("TRACEROUTE #{dest} 0\\n")
 			sock = Socket.new(AF_INET, SOCK_STREAM, 0)
 			sockaddr = Socket.pack_sockaddr_in(6666, 'localhost')
+			start_time = Time.now
 			sock.connect(sockaddr)
 			realmsg.each { |x|
 				sock.write(x)
@@ -135,16 +141,41 @@ input = gets
 						data = sock.gets("\\n")
 						output = data.gsub("END", "").gsub("\\n", "")
 						#output = output.slice("\\n")
-						puts(output)
+						receipt_time = Time.now
+						hop_time = receipt_time.to_ms - start_time.to_ms
+						puts("#{output} #{hop_time} ms")
 					end
 				rescue Timeout::Error
 					puts("Hop calculation took more than 10 seconds, aborting.")
+					break
 				end
 				if data =~ /END/
 					break
 				end
 			end
-					
+			sock.close			
+		when /^ONION (\S+) (.*)/
+			dest = $1
+			mesg = $2
+			realmsg = packetize("ONION #{dest} #{mesg}\\n")
+			sock = Socket.new(AF_INET, SOCK_STREAM, 0)
+			sockaddr = Socket.pack_sockaddr_in(6666, 'localhost')
+			sock.connect(sockaddr)
+			realmsg.each { |x|
+				sock.write(x)
+			}
+			reply = ""
+			begin
+				Timeout::timeout 10 do
+					reply = sock.gets("\\n")
+				end
+			rescue Timeout::Error
+				puts("Message was sent out, but acknowledgement took too long")
+			end
+			if reply =~ /Acknowledged/
+				puts("Message Delivered, We've got layers")
+			end
+			sock.close
 		when /^ENC (\S+) (.*)/i
 			dest = $1
 			mesg = $2
@@ -185,6 +216,7 @@ input = gets
 			else
 				puts("Encrypted message sent")#, however the recipient sent something other than an acknowledgement: #{reply}")
 			end
+			sock.close
 		else 
 			puts("Invalid command, type help for list of valid commands")
 		end

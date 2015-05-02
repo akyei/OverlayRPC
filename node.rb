@@ -1,5 +1,5 @@
 #!/usr/bin/ruby
-
+dir = File.expand_path(File.dirname(__FILE__))
 file = ARGV[0]
 configFile = File.open(file, 'r')
 hostname = `hostname`
@@ -19,6 +19,8 @@ if length == nil or weightfile == nil or routeinterval == nil or routefile == ni
 	puts("invalid config file. Format should be a single, comma seperated line with the following fields\n[Maximum Packet Size],[Weights File],[Routing Interval],[Routing Table Output Directroy],[Dump Interval].\n\nRouting Table dumps will be found in the directory you specified under the file name #{hostname}.dump.")
 exit
 end
+
+Dir.chdir(dir)
 #puts("ruby /home/core/OverlayRPC2/graph.rb -w #{weightfile} -r #{routefile} -d #{dumpinterval} -q #{routeinterval} -m #{length}")
 fork do
 exec("ruby graph.rb -w #{weightfile} -r #{routefile} -d #{dumpinterval} -q #{routeinterval} -m #{length} ")

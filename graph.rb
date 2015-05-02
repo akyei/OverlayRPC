@@ -64,6 +64,8 @@ ip_addresses = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{prin
 $interfaces = ip_addresses.split("\n")
 $mutex = Mutex.new
 $sequence = {}
+$pub_keys = {}
+$private_key = nil
 $maxlen = options[:maxlength]
 $routeinterval = options[:routeinterval]
 $dumpinterval = options[:dumpinterval]
@@ -157,7 +159,30 @@ def to_s
 end
 end
 
+class RoutingTable
+	attr_accessor :nexthop, :path, :hostname, :cost, :sequence, :disassociation
 
+	def initialize(hname)
+		@hostname = hname
+		@nexthop = {}
+		@path = {}
+		@cost = {}
+		@sequence = {}
+		@disassociation = {}
+	end
+
+	def to_s
+		str = ""
+		@nexthop.each { |key, value|
+		#	puts ("we out here #{cost[key]}")
+			str << "#{@hostname},#{key}(#{@disassociation[key]}),#{value},#{@cost[key]},#{@sequence[key]}\n"
+		#	puts("sucking toes")
+		}
+		#puts("no longer out here")
+		#puts(str)	
+		return str
+	end	
+end
 
 
 def associate(node, src)
@@ -189,6 +214,7 @@ $interfaces.each do |key|
 	end
 end
 $graph = Graph.new(initEdges)
+$routing_table = RoutingTable.new($hostname)
 configFile = File.open($weightfile, 'r')
 while line=configFile.gets()
 	arr = line.split(",")
@@ -205,6 +231,22 @@ def packetize(str)
 	return arr
 end
 
+def sendPUB(pub_string, source)
+	$neighbors.each do |key, value|
+		if key == source
+			next
+		end
+		realmsg = packetize(pub_string)
+			socket = Socket.new(AF_INET, SOCK_STREAM, 0)
+			sockaddr = Socket.sockaddr_in(6666, "#{key}")
+			socket.connect(sockaddr)
+			realmsg.each{ |x|
+				socket.write(x)
+			}
+			socket.close
+#	puts("Sending public key: #{pub_string}")
+	end
+end
 def sendLSP(lsp_string, source, node)
 	if (node == $hostname)
 		return
@@ -222,6 +264,31 @@ def sendLSP(lsp_string, source, node)
 		}
 		socket.close
 	end
+end
+def procPRIV(priv_string)
+	if priv_string =~ /PRIV (.*)\\n/m
+		priv_key = $1
+	end
+	$private_key = OpenSSL::PKey::RSA.new(priv_key) 
+end
+def procPUB(pub_string, source)
+	#puts(pub_string)
+	$mutex.synchronize do
+	if pub_string =~ /PUB (\S+) (.*)\\n/m then
+		src = $1
+		pub_key = $2
+	end
+	if $pub_keys[src] == nil
+		$pub_keys[src] = OpenSSL::PKey::RSA.new(pub_key)
+	else
+		#Already received a more recent LSP from this link
+		return 
+	end
+		
+	sendPUB(pub_string, source)
+
+	end
+
 end
 def procLSP(lsp_string, source)
 	$mutex.synchronize do
@@ -319,11 +386,19 @@ def procTRACEROUTE(pack_string, inc_socket)
 		nexthop = findNextHop(destination)
 	end
 	if (nexthop == nil)
-		realmsg = packetize("#{hopnumber+1} #{$hostname} END\\n")
-		realmsg.each { |x|
-			inc_socket.write(x)
-		}
-		inc_socket.close
+		if destination == $hostname || $interfaces.include?(destination)
+			realmsg = packetize("#{hopnumber+1} #{$hostname} END\\n")
+			realmsg.each { |x|
+				inc_socket.write(x)
+			}
+			inc_socket.close
+		else 
+			realmsg = packetize("NO INFO ABOUT ROUTE TO #{destination} END\\n")
+			realmsg.each { |y|
+				inc_socket.write(x)
+			}
+			inc_socket.close
+		end
 	else
 		realmsg = packetize("#{hopnumber+1} #{$hostname}\\n")
 		realmsg.each { |x|
@@ -378,6 +453,13 @@ def procSENDMSG(pack_string, inc_socket)
 		inc_socket.close
 		puts("RECEIVED MSG FROM #{sending_ip} #{data}")
 		print("Enter a command (type help for help):")
+		return
+	elsif (nexthop == true)
+		realmsg = packetize("FAILED: no known route to house\\n")
+		realmsg.each { |x|
+			inc_socket.write(x)
+		}
+		$stderr.puts("Tried to route to #{destination} but had no route")
 		return
 	else
 	sock = Socket.new(AF_INET, SOCK_STREAM, 0)
@@ -454,18 +536,106 @@ def procENC(pack_string, inc_socket)
 	end
 	
 end
+def procONION(pack_string, inc_socket)
+	if pack_string =~ /ONION (\S+) (.*)\\n/
+		dest = $1
+		data = $2
+	end
+	true_dest = ""
+#	puts("1")
+	if dest =~ /[\d]+\.[\d]+\.[\d]+\.[\d]+/
+		true_dest = dest
+	else
+		if $associations[dest] != nil
+			$associations[dest].each { |x|
+				true_dest = x
+				break
+			}
+		else
+			return
+		end
+	end			
+#	puts("2")
+	arr = []
+	truearr = []
+	$mutex.synchronize do
+		#puts($routing_table.path[:"#{true_dest}"].class)
+		arr = $routing_table.path[:"#{true_dest}"]
+		end	
+	#	puts(arr)
+		for i in 0..(arr.length-2) do
+			truearr[i] = $pub_keys["#{arr[i]}"].public_encrypt("#{arr[i+1]}")	
+		end
+		enc_data = $pub_keys["#{true_dest}"].public_encrypt(data)
+	#	true_arr = arr.map { |x| $pub_keys[x].public_encrypt(x)} 
+		payload = Marshal.dump(truearr)
+		message = "ONIONENC \"#{payload}\" #{enc_data}\\n"
+		socket = Socket.new(AF_INET, SOCK_STREAM, 0)
+		sockaddr = Socket.pack_sockaddr_in(6666, "#{arr[0]}")
+		socket.connect(sockaddr)
+		realmsg = packetize(message)
+		realmsg.each { |x|
+			#puts("INDIGO LEAGUE")
+			socket.write(x)
+		}
+		reply = socket.gets("\\n")
+		replymsg = packetize(reply)
+		replymsg.each { |y|
+			inc_socket.write(y)
+		}
+		socket.close
+		
+end
+def procONIONENC(onion_string, inc_socket)
+	if onion_string =~ /ONIONENC "(.*)" (.*)\\n/m
+		payload = $1
+		data = $2
+	end
+	arr = Marshal.load(payload)
+	if arr.empty?
+		replymsg = packetize("Acknowledged\\n")
+		replymsg.each { |x|
+			inc_socket.write(x)
+		}
+		unenc_data = $private_key.private_decrypt(data)
+		puts("Received ONION Message #{unenc_data}")
+	else
+	nexthop = $private_key.private_decrypt("#{arr[0]}")
+	arr.shift
+	new_payload = Marshal.dump(arr)
+	new_msg = packetize("ONIONENC \"#{new_payload}\" #{data}\\n")
+	socket = Socket.new(AF_INET, SOCK_STREAM, 0)
+	sockaddr = Socket.pack_sockaddr_in(6666, "#{nexthop}")
+	socket.connect(sockaddr)
+	new_msg.each { |x|
+		socket.write(x)
+	}
+	reply = socket.gets("\\n")
+	inc_socket.write(reply)
+	socket.close
+	end
+	
+end
 def procPacket(pack_string, source, socket)
 	case pack_string
-		when /LSP (.*)/
+		when /^LSP .*/m
 			procLSP(pack_string, source)
-		when /SENDMSG (.*)/
+		when /^SENDMSG .*/m
 			procSENDMSG(pack_string, socket)
-		when /PING (.*)/
+		when /^PING .*/m
 			procPING(pack_string, socket)
-		when /TRACEROUTE (.*)/
+		when /^TRACEROUTE .*/m
 			procTRACEROUTE(pack_string, socket)
-		when /ENC (.*)/
+		when /^ENC .*/m
 			procENC(pack_string, socket)
+		when /^PRIV .*/m
+			procPRIV(pack_string)
+		when /^PUB .*/m
+			procPUB(pack_string, source)
+		when /^ONION .*/m
+			procONION(pack_string, socket)
+		when /^ONIONENC/m
+			procONIONENC(pack_string, socket)
 		else
 			puts("Received an invalid message")
 		end
@@ -473,12 +643,12 @@ end
 def findNextHop(hostname)
 $mutex.synchronize do
 	ret_path = []
-	source = $interfaces[0].chomp.chomp.to_sym 
-	$graph.reset
-	$graph.dijkstra(source)
+#	source = $interfaces[0].chomp.chomp.to_sym 
+#	$graph.reset
+#	$graph.dijkstra(source)
 	small = INFINITY
 	$associations[hostname.chomp].each { |ip|
-			path, dist = $graph.shortest_path(source, ip.chomp.to_sym)
+=begin			path, dist = $graph.shortest_path(source, ip.chomp.to_sym)
 			if dist == nil
 				next
 			end
@@ -487,6 +657,19 @@ $mutex.synchronize do
 				ret_path = path
 			else 
 			end
+=end
+			path = $routing_table.path[ip.to_sym]
+			dist = $routing_table.cost[ip.to_sym]
+			if dist == nil
+				next
+			end
+			if dist < small
+				small = dist
+				ret_path = path
+			else
+			end			
+
+
 	}
 	symInterfaces = $interfaces.map { |x| x.chomp.to_sym}
 	final_path = ret_path - symInterfaces
@@ -500,6 +683,14 @@ def findNextHopIP(ip)
 	hostname = deassociate(ip)
 	findNextHop(hostname)	
 end
+def imp_dump(filename)
+	$mutex.synchronize do
+		file = File.open(filename, 'w')
+		file.puts($routing_table.to_s)
+		file.close
+	end
+end
+=begin
 def dump(filename)
 $mutex.synchronize do
 	file = File.open(filename, 'w')
@@ -525,6 +716,7 @@ $mutex.synchronize do
 	file.close
 end
 end
+=end
 def deassociate(ip)
 	$associations.each { |key, value|
 		terp = key
@@ -534,20 +726,39 @@ def deassociate(ip)
 	}
 	return nil
 end
-	
+def convert_to_table
+	source = $interfaces[0].chomp.to_sym
+	symInterfaces = $interfaces.map { |x| x.chomp.to_sym}
+	$graph.vertices.each { |key, value|
+		path, dist = $graph.shortest_path(source, key)
+		ret_path = path - symInterfaces
+		nexthop = ret_path[0]
+		$routing_table.nexthop[key] = nexthop
+		$routing_table.path[key] = Array.new(ret_path)
+		if node = deassociate(key.to_s)
+			$routing_table.disassociation[key] = node
+		end
+		#puts(dist)
+		$routing_table.cost[key] = dist
+		$routing_table.sequence[key] = $graph.vertices[key].dist[1]
+	}
+end	
  
 threadA = Thread.new do
 	loop{
 	sleep($routeinterval)
 	$mutex.synchronize do
+		$graph.reset
 		$graph.dijkstra(:"#{$interfaces[0].chomp}")
+		convert_to_table
 	end
 	}
 end
 threadB = Thread.new do
 	loop { 
 		sleep($dumpinterval)
-		dump($routefile)
+		#dump($routefile)
+		imp_dump($routefile)
 	}
 end
 server = TCPServer.new('0.0.0.0', 6666)

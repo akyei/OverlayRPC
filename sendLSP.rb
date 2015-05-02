@@ -2,6 +2,7 @@
 require 'optparse'
 require 'socket'
 require 'ipaddr'
+require 'openssl'
 include Socket::Constants
 
 options = {:file => nil, :delay => nil, :length => nil, :time => nil}
@@ -51,6 +52,8 @@ ip_addresses = `ifconfig | grep 'inet addr' | awk -F : '{print $2}' | awk '{prin
 neighbors = {}
 sequence = {}
 interfaces = ip_addresses.split("\n")
+$rsa_key = OpenSSL::PKey::RSA.new(2048)
+$rsa_pub = $rsa_key.public_key
 def packetize(str, maxlen)
 =begin	arr = []
 	n = ((str.length.to_f / maxlen)).ceil
@@ -66,8 +69,25 @@ maxlen = options[:length]
 initial_sleep = options[:time]
 delay = options[:delay]
 file = options[:file]
-
+counter = 0
 sleep(initial_sleep)
+
+serv_sock = Socket.new(AF_INET, SOCK_STREAM, 0)
+sockaddr = Socket.sockaddr_in(6666, "#{interfaces[0]}")
+begin
+serv_sock.connect(sockaddr)
+rescue Errno::ECONNREFUSED 
+	sleep(3)
+	retry
+end
+priv_msg = "PRIV #{$rsa_key.to_pem}\\n"
+realmsg = packetize(priv_msg, maxlen)
+realmsg.each { |x|
+	serv_sock.write(x)
+}
+
+
+
 while true 
 	str =""
 	neighbors = {}
@@ -108,8 +128,10 @@ while true
 		#	puts(yes)
 		#	puts("#{key1} #{key2}")
 			lsp_string = "LSP #{key1} #{hostname} #{sequence[key2]} \"#{str} #{yes[0]}:#{yes[1]}\"\\n"
+			pub_string = "PUB #{key1} #{$rsa_pub.to_pem}\\n"
 			#puts(lsp_string)
 			realmsg = packetize(lsp_string, maxlen)
+			pubmsg = packetize(pub_string, maxlen)
 		begin
 			socket = Socket.new(AF_INET, SOCK_STREAM, 0)
 			sockaddr = Socket.sockaddr_in(6666, "#{value[0]}")
@@ -118,6 +140,15 @@ while true
 				socket.write(x)
 			}
 			socket.close
+			if counter % 5 == 0
+				socket2 = Socket.new(AF_INET, SOCK_STREAM, 0)
+				sockaddr2 = Socket.sockaddr_in(6666, "#{value[0]}")
+				socket2.connect(sockaddr2)
+				pubmsg.each { |y|
+					socket2.write(y)
+				}		
+				socket2.close
+			end
 		rescue Errno::ECONNREFUSED
 		#	puts("Server not up yet")
 		#	sleep(5)
@@ -126,6 +157,7 @@ while true
 #			end
 		}
 	}
+	counter = counter + 1
 	sleep(delay)
 end
  
